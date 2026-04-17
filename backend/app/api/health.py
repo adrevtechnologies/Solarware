@@ -1,5 +1,6 @@
 """Health check endpoints."""
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 
 from app.core import get_settings
@@ -10,12 +11,8 @@ router = APIRouter(tags=["health"])
 
 @router.get("/")
 async def root():
-    """Simple root endpoint for uptime checks and browser opens."""
-    return {
-        "service": "Solarware API",
-        "status": "ok",
-        "health": "/health",
-    }
+    """Redirect root requests to the bundled UI."""
+    return RedirectResponse(url="/app/")
 
 
 @router.get("/health")
