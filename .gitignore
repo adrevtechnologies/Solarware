@@ -71,6 +71,7 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+output/
 
 # OS
 .env.sql
