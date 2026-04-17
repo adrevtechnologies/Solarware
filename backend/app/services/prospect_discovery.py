@@ -191,7 +191,7 @@ class ProspectDiscoveryService:
         min_area_sqft = float(search_area.min_roof_area_sqft)
 
         try:
-            from geoalchemy2.types import WKTElement
+            from geoalchemy2 import WKTElement
 
             buildings = self._fetch_osm_buildings(search_area)
             for building in buildings:
