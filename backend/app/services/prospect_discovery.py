@@ -91,7 +91,10 @@ class ProspectDiscoveryService:
             "status": "processing",
             "errors": [],
         }
-        self._set_status(search_area_id, **result)
+        self._set_status(
+            search_area_id,
+            **{k: v for k, v in result.items() if k != "search_area_id"},
+        )
         
         try:
             # Retrieve search area config
@@ -105,14 +108,20 @@ class ProspectDiscoveryService:
                 result["prospects_analyzed"] = discovered
                 result["status"] = "completed"
                 result["completed_at"] = datetime.utcnow().isoformat()
-                self._set_status(search_area_id, **result)
+                self._set_status(
+                    search_area_id,
+                    **{k: v for k, v in result.items() if k != "search_area_id"},
+                )
                 
         except Exception as e:
             logger.error(f"Processing failed: {str(e)}", exc_info=e)
             result["status"] = "failed"
             result["errors"].append(str(e))
             result["completed_at"] = datetime.utcnow().isoformat()
-            self._set_status(search_area_id, **result)
+            self._set_status(
+                search_area_id,
+                **{k: v for k, v in result.items() if k != "search_area_id"},
+            )
         
         logger.info(f"Processing completed for search area: {search_area_id}")
         return result
