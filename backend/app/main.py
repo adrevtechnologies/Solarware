@@ -51,11 +51,6 @@ output_dir = Path(settings.OUTPUT_BASE_PATH).resolve()
 output_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/output", StaticFiles(directory=str(output_dir)), name="output")
 
-# Serve bundled frontend UI from the backend deployment.
-frontend_dir = Path(__file__).resolve().parent / "static"
-if frontend_dir.exists():
-    app.mount("/app", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
-
 
 # Exception handlers
 @app.exception_handler(SolarwareError)
