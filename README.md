@@ -121,8 +121,8 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Run migrations (if using Alembic)
-alembic upgrade head
+# Run database migration
+python migration/run_migration.py
 
 # Start server
 uvicorn app.main:app --reload
