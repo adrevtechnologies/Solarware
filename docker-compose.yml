@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: solarware_db
+    environment:
+      POSTGRES_USER: solarware
+      POSTGRES_PASSWORD: solarware_dev_password
+      POSTGRES_DB: solarware
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U solarware']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: solarware_api
+    environment:
+      DATABASE_URL: postgresql://solarware:solarware_dev_password@postgres:5432/solarware
+      ENVIRONMENT: development
+      DEBUG: 'true'
+      CORS_ORIGINS: 'http://localhost:3000,http://localhost:5173,http://solarware_ui:5173,http://127.0.0.1:5173'
+    ports:
+      - '8000:8000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: solarware_ui
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - '3000:3000'
+      - '5173:5173'
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    command: npm run dev
+
+volumes:
+  postgres_data:

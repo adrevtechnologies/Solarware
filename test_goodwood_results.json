@@ -1,0 +1,143 @@
+{
+  "search_area": {
+    "name": "Goodwood Test Area",
+    "country": "ZA",
+    "center_latitude": -33.9402,
+    "center_longitude": 18.5798,
+    "test_address": "98 Richmond Street, Goodwood, Cape Town 7460"
+  },
+  "solar_data": {
+    "irradiance_kwhm2_day": 5.2,
+    "electricity_rate_per_kwh": 2.5
+  },
+  "summary": {
+    "total_prospects": 8,
+    "total_capacity_kw": 58.8,
+    "total_production_kwh": 1487101.0,
+    "total_savings_rands": 3717754.95,
+    "average_savings": 464719.36875
+  },
+  "prospects": [
+    {
+      "id": "b3c449ca-fb1a-4e89-9b75-fcd38a38cb2a",
+      "address": "98 Richmond Street, Goodwood, Cape Town 7460",
+      "latitude": -33.9402,
+      "longitude": 18.5828,
+      "distance_km": 0.27674885677226274,
+      "roof_area_sqm": 100,
+      "panel_count": 12,
+      "system_capacity_kw": 4.8,
+      "annual_production_kwh": 121396.0,
+      "annual_savings_rands": 303490.2,
+      "solar_confidence": 0.8,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "2e0b67bc-a333-4bd0-9ef7-05d0319a7da5",
+      "address": "99 Richmond Street, Goodwood, Cape Town 7460",
+      "latitude": -33.937675587045575,
+      "longitude": 18.581420906917604,
+      "distance_km": 0.31804537955588247,
+      "roof_area_sqm": 115,
+      "panel_count": 14,
+      "system_capacity_kw": 5.6,
+      "annual_production_kwh": 141629.0,
+      "annual_savings_rands": 354071.9,
+      "solar_confidence": 0.82,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "f3893fe2-5930-44fc-938d-9e64fb85d9ff",
+      "address": "100 Richmond Street, Goodwood, Cape Town 7460",
+      "latitude": -33.93747210771952,
+      "longitude": 18.578551559490357,
+      "distance_km": 0.32445627393515275,
+      "roof_area_sqm": 130,
+      "panel_count": 16,
+      "system_capacity_kw": 6.4,
+      "annual_production_kwh": 161861.0,
+      "annual_savings_rands": 404653.6,
+      "solar_confidence": 0.84,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "07cd7033-28a7-458c-85d8-2d46c6bf8239",
+      "address": "103 Richmond Street, Goodwood, Cape Town 7460",
+      "latitude": -33.93977663997582,
+      "longitude": 18.576830022510197,
+      "distance_km": 0.2779948326650448,
+      "roof_area_sqm": 145,
+      "panel_count": 17,
+      "system_capacity_kw": 6.8,
+      "annual_production_kwh": 171978.0,
+      "annual_savings_rands": 429944.45,
+      "solar_confidence": 0.86,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "f483eb96-202a-4346-be0f-1b5ce32e81a5",
+      "address": "105 Richmond Street, Goodwood, Cape Town 7460",
+      "latitude": -33.94247040748592,
+      "longitude": 18.577839069137408,
+      "distance_km": 0.31057545167329115,
+      "roof_area_sqm": 160,
+      "panel_count": 19,
+      "system_capacity_kw": 7.6,
+      "annual_production_kwh": 192210.0,
+      "annual_savings_rands": 480526.15,
+      "solar_confidence": 0.88,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "bdc2286b-9102-44a2-a289-6bf090e32712",
+      "address": "Goodwood Medical Centre, Goodwood, Cape Town 7460",
+      "latitude": -33.943076772823986,
+      "longitude": 18.58065098655639,
+      "distance_km": 0.3293742298614106,
+      "roof_area_sqm": 175,
+      "panel_count": 21,
+      "system_capacity_kw": 8.4,
+      "annual_production_kwh": 212443.0,
+      "annual_savings_rands": 531107.85,
+      "solar_confidence": 0.9,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "92b20dac-14b8-4ed4-91b6-c133ae985baf",
+      "address": "Goodwood Community Hall, Goodwood, Cape Town 7460",
+      "latitude": -33.94103824649459,
+      "longitude": 18.58268051085995,
+      "distance_km": 0.281598117536051,
+      "roof_area_sqm": 190,
+      "panel_count": 23,
+      "system_capacity_kw": 9.2,
+      "annual_production_kwh": 232676.0,
+      "annual_savings_rands": 581689.55,
+      "solar_confidence": 0.92,
+      "has_existing_solar": false,
+      "data_complete": true
+    },
+    {
+      "id": "06a50c0e-ea57-4af3-bb73-ef82d1ab0fde",
+      "address": "Goodwood Business Centre, Goodwood, Cape Town 7460",
+      "latitude": -33.938229040203844,
+      "longitude": 18.582061706763028,
+      "distance_km": 0.3025950183786155,
+      "roof_area_sqm": 205,
+      "panel_count": 25,
+      "system_capacity_kw": 10.0,
+      "annual_production_kwh": 252908.0,
+      "annual_savings_rands": 632271.25,
+      "solar_confidence": 0.94,
+      "has_existing_solar": false,
+      "data_complete": true
+    }
+  ],
+  "timestamp": "2026-04-12T12:27:57.294366"
+}
