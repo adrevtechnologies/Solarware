@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { SearchArea } from '../types';
 
 export const Dashboard: React.FC = () => {
-  const [searchAreas, setSearchAreas] = useState<SearchArea[]>([]);
+  const [, setSearchAreas] = useState<SearchArea[]>([]);
   const [selectedArea, setSelectedArea] = useState<SearchArea | null>(null);
   const [prospects, setProspects] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);

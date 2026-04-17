@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// Always use relative URLs - Vite proxy handles routing to backend
-const API_URL = '';
+// In production, set VITE_API_URL to the deployed backend URL.
+// In local dev, leave it empty and rely on Vite proxy.
+const rawApiUrl = import.meta.env.VITE_API_URL || '';
+const API_URL = rawApiUrl.replace(/\/$/, '');
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -22,7 +24,7 @@ export const api = {
 
   // Prospects
   listProspects: (searchAreaId?: string, skip?: number, limit?: number) => {
-    const params = { skip: skip || 0, limit: limit || 50 };
+    const params: Record<string, string | number> = { skip: skip || 0, limit: limit || 50 };
     if (searchAreaId) params['search_area_id'] = searchAreaId;
     return apiClient.get('/api/prospects', { params });
   },
