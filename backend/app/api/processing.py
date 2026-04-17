@@ -1,5 +1,5 @@
 """API routes for processing and discovery."""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 import uuid
 from app.services.prospect_discovery import ProspectDiscoveryService, get_processing_status as get_status_snapshot
 from app.core.logging import logger
@@ -10,7 +10,6 @@ router = APIRouter(prefix="/api/process", tags=["processing"])
 @router.post("/search-area/{search_area_id}")
 async def process_search_area(
     search_area_id: str,
-    background_tasks: BackgroundTasks,
     generate_visualizations: bool = True,
     enrich_contacts: bool = True,
     generate_packs: bool = True,
@@ -31,29 +30,19 @@ async def process_search_area(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid search area ID format")
     
-    # Start processing in background
-    service = ProspectDiscoveryService()
-    ProspectDiscoveryService._set_status(
-        search_area_id,
-        search_area_id=search_area_id,
-        status="queued",
-        message="Processing has been queued",
-    )
-    background_tasks.add_task(
-        service.process_search_area,
-        search_area_id,
-        generate_visualizations,
-        enrich_contacts,
-        generate_packs,
-    )
-    
-    logger.info(f"Processing started for search area: {search_area_id}")
-    
-    return {
-        "status": "processing_started",
-        "search_area_id": search_area_id,
-        "message": "Processing has been queued. Check status for updates."
-    }
+    try:
+        service = ProspectDiscoveryService()
+        await service.process_search_area(
+            search_area_id,
+            generate_visualizations,
+            enrich_contacts,
+            generate_packs,
+        )
+        logger.info(f"Processing completed for search area: {search_area_id}")
+        return get_status_snapshot(search_area_id)
+    except Exception as e:
+        logger.error(f"Processing start failed for {search_area_id}: {str(e)}", exc_info=e)
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
 @router.get("/status/{search_area_id}")
