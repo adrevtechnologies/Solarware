@@ -105,7 +105,7 @@ export const Dashboard: React.FC = () => {
         postcode: searchParams.postalCode,
         radius_m: isExactMode ? 300 : 1500,
         include_residential: isExactMode,
-        min_roof_sqm: isExactMode ? 40 : (searchParams.minRoofSqm || 150),
+        min_roof_sqm: isExactMode ? 40 : searchParams.minRoofSqm || 150,
       };
 
       console.info('[Solarware] search:start', {
@@ -131,48 +131,8 @@ export const Dashboard: React.FC = () => {
         message: response.data.message,
       });
 
-      if (isExactMode && exactCount === 0) {
-        const areaFallbackPayload = {
-          ...payload,
-          mode: 'area' as const,
-          street_number: undefined,
-          street_name: undefined,
-          radius_m: 1500,
-        };
-
-        console.info('[Solarware] search:fallback-area:start', {
-          suburb: areaFallbackPayload.suburb,
-          city: areaFallbackPayload.city,
-          province: areaFallbackPayload.province,
-        });
-
-        let areaResponse;
-        try {
-          areaResponse = await api.searchProspects(areaFallbackPayload);
-        } catch (firstAreaError) {
-          console.warn('[Solarware] search:fallback_first_attempt_failed_retrying', firstAreaError);
-          await sleep(1200);
-          areaResponse = await api.searchProspects(areaFallbackPayload);
-        }
-        const areaCount = areaResponse.data.count ?? (areaResponse.data.results || []).length;
-
-        console.info('[Solarware] search:fallback-area:done', {
-          count: areaCount,
-          message: areaResponse.data.message,
-        });
-
-        setResults(areaResponse.data.results || []);
-        if (areaCount > 0) {
-          setSearchMessage(
-            'No exact commercial match for that street address. Showing area results instead.'
-          );
-        } else {
-          setSearchMessage(response.data.message || areaResponse.data.message || '');
-        }
-      } else {
-        setResults(response.data.results || []);
-        setSearchMessage(response.data.message || '');
-      }
+      setResults(response.data.results || []);
+      setSearchMessage(response.data.message || '');
     } catch (error) {
       console.error('[Solarware] search:error', error);
       setResults([]);

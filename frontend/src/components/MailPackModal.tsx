@@ -19,12 +19,35 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
   onSendEmail,
 }) => {
   const [recipientEmail, setRecipientEmail] = useState('');
+  const [beforeImageError, setBeforeImageError] = useState(false);
+  const [afterImageError, setAfterImageError] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setRecipientEmail(prospect?.email || '');
     }
   }, [isOpen, prospect?.email]);
+
+  useEffect(() => {
+    setBeforeImageError(false);
+    setAfterImageError(false);
+  }, [pack?.before_image_url, pack?.after_image_url]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', onKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   const defaultEmail = useMemo(() => {
     return recipientEmail;
@@ -56,10 +79,25 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-        <div className="border-b border-slate-700 px-6 py-4">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-700 bg-slate-900/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
           <h2 className="text-lg font-bold text-slate-100">Mail Pack</h2>
+          <button
+            onClick={onClose}
+            className="ml-4 rounded-md border border-slate-600 px-3 py-1 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+          >
+            Close
+          </button>
+        </div>
+        <div className="px-4 pb-2 pt-3 sm:px-6">
           <p className="text-sm text-slate-400">{prospect.address}</p>
         </div>
 
@@ -70,7 +108,18 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
             </h3>
             <div className="overflow-hidden rounded-lg border border-slate-700">
               <div className="relative">
-                <img src={pack.before_image_url} alt="Before roof" className="w-full" />
+                {!beforeImageError ? (
+                  <img
+                    src={pack.before_image_url}
+                    alt="Before roof"
+                    className="max-h-[44vh] w-full object-contain"
+                    onError={() => setBeforeImageError(true)}
+                  />
+                ) : (
+                  <div className="flex min-h-[220px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
+                    Before image failed to load.
+                  </div>
+                )}
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
                 </div>
@@ -84,11 +133,18 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
             </h3>
             <div className="overflow-hidden rounded-lg border border-slate-700">
               <div className="relative">
-                <img
-                  src={pack.after_image_url}
-                  alt="After roof with panel overlay"
-                  className="w-full"
-                />
+                {!afterImageError ? (
+                  <img
+                    src={pack.after_image_url}
+                    alt="After roof with panel overlay"
+                    className="max-h-[44vh] w-full object-contain"
+                    onError={() => setAfterImageError(true)}
+                  />
+                ) : (
+                  <div className="flex min-h-[220px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
+                    After image failed to load.
+                  </div>
+                )}
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
                 </div>
@@ -157,15 +213,6 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="border-t border-slate-700 px-6 py-4 text-right">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-200"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

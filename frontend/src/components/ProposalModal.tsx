@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Prospect } from '../types';
 
 interface ProposalModalProps {
@@ -16,24 +16,68 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
   generating,
   onGenerateMailPack,
 }) => {
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [prospect?.satellite_image_url]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', onKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen || !prospect) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-        <div className="border-b border-slate-700 px-6 py-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-700 bg-slate-900/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
           <h2 className="text-lg font-bold text-slate-100">{prospect.address}</h2>
-          <p className="mt-1 text-sm text-slate-400">{prospect.building_type}</p>
+          <button
+            onClick={onClose}
+            className="ml-4 rounded-md border border-slate-600 px-3 py-1 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+          >
+            Close
+          </button>
+        </div>
+        <div className="px-4 pb-2 pt-3 sm:px-6">
+          <p className="text-sm text-slate-400">{prospect.building_type}</p>
         </div>
 
-        <div className="p-6">
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="overflow-hidden rounded-lg border border-slate-700">
             <div className="relative">
-              <img
-                src={prospect.satellite_image_url}
-                alt={`Satellite roof view for ${prospect.address}`}
-                className="h-auto w-full"
-              />
+              {!imageError ? (
+                <img
+                  src={prospect.satellite_image_url}
+                  alt={`Satellite roof view for ${prospect.address}`}
+                  className="max-h-[58vh] w-full object-contain"
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <div className="flex min-h-[260px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
+                  Could not load this image in the modal. Use the map link below for the exact target location.
+                </div>
+              )}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
               </div>
@@ -71,12 +115,6 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-slate-700 px-6 py-4">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-          >
-            Close
-          </button>
           <button
             onClick={onGenerateMailPack}
             disabled={generating}

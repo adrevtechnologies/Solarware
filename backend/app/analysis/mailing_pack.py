@@ -105,7 +105,7 @@ Solarware
             suitability_score = int(prospect.get("solar_score") or 0)
             opportunity_tier = MailingPackGenerator._opportunity_tier(suitability_score)
 
-            email_subject = f"Solar Savings Opportunity for {prospect.get('business_name', 'Your Property')}"
+            email_subject = f"Solar Savings Opportunity for {prospect.get('business_name') or 'Your Property'}"
 
             # Render email
             template = Template(MailingPackGenerator.PROSPECT_EMAIL_TEMPLATE)

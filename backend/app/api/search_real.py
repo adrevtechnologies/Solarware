@@ -500,19 +500,29 @@ async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
     try:
         prospect = request.prospect
 
-        mockup_path = await VizGenerator.generate_mockup(
-            satellite_image_path=prospect.satellite_image_url,
-            panel_count=prospect.estimated_panel_count,
-            roof_area_sqm=prospect.roof_area_sqm,
-            system_capacity_kw=prospect.capacity_high_kw,
-            roof_polygon=prospect.roof_polygon,
-            image_bbox=prospect.image_bbox,
-        )
+        mockup_path: Optional[str] = None
+        before_after_path: Optional[str] = None
 
-        before_after_path = await VizGenerator.generate_before_after(
-            before_image_path=prospect.satellite_image_url,
-            mockup_image_path=mockup_path,
-        )
+        try:
+            mockup_path = await VizGenerator.generate_mockup(
+                satellite_image_path=prospect.satellite_image_url,
+                panel_count=prospect.estimated_panel_count,
+                roof_area_sqm=prospect.roof_area_sqm,
+                system_capacity_kw=prospect.capacity_high_kw,
+                roof_polygon=prospect.roof_polygon,
+                image_bbox=prospect.image_bbox,
+            )
+        except Exception as viz_error:
+            logger.warning("Mockup generation failed for %s: %s", prospect.osm_id, viz_error)
+
+        if mockup_path:
+            try:
+                before_after_path = await VizGenerator.generate_before_after(
+                    before_image_path=prospect.satellite_image_url,
+                    mockup_image_path=mockup_path,
+                )
+            except Exception as compare_error:
+                logger.warning("Before/after generation failed for %s: %s", prospect.osm_id, compare_error)
 
         pack = MailingPackGenerator.generate(
             prospect={
@@ -545,8 +555,8 @@ async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
         return MailPackResponse(
             id=pack["id"],
             before_image_url=prospect.satellite_image_url,
-            after_image_url=_to_public_output_url(mockup_path) or "",
-            before_after_image_url=_to_public_output_url(before_after_path) or "",
+            after_image_url=_to_public_output_url(mockup_path) or prospect.satellite_image_url,
+            before_after_image_url=_to_public_output_url(before_after_path) or prospect.satellite_image_url,
             pdf_url=_to_public_output_url(pack.get("pdf_path")) or "",
             email_subject=pack["email_subject"],
             email_body=pack["email_body"],
