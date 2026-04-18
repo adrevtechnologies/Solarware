@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 from datetime import datetime
-from app.core.config import get_settings
+from ..core.config import get_settings
 
 
 def ensure_output_dir(subdir: str = "") -> Path:

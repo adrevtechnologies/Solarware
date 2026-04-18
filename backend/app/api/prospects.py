@@ -6,12 +6,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.analysis.mailing_pack import MailingPackGenerator
-from app.analysis.visualization import VizGenerator
-from app.core import get_db
-from app.core.config import get_settings
-from app.models import Contact, Prospect
-from app.schemas import ContactResponse, ProspectResponse
+from ..analysis.mailing_pack import MailingPackGenerator
+from ..analysis.visualization import VizGenerator
+from ..core import get_db
+from ..core.config import get_settings
+from ..models import Contact, Prospect
+from ..schemas import ContactResponse, ProspectResponse
 
 router = APIRouter(prefix="/api/prospects", tags=["prospects"])
 

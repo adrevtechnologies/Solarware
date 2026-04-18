@@ -1,8 +1,8 @@
 """API routes for processing and discovery."""
 from fastapi import APIRouter, HTTPException
 import uuid
-from app.services.prospect_discovery import ProspectDiscoveryService, get_processing_status as get_status_snapshot
-from app.core.logging import logger
+from ..services.prospect_discovery import ProspectDiscoveryService, get_processing_status as get_status_snapshot
+from ..core.logging import logger
 
 router = APIRouter(prefix="/api/process", tags=["processing"])
 

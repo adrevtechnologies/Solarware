@@ -5,9 +5,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from pathlib import Path
-from app.core.config import get_settings
-from app.core.logging import logger
-from app.core.errors import EmailError
+from ..core.config import get_settings
+from ..core.logging import logger
+from ..core.errors import EmailError
 
 
 class EmailService:

@@ -2,9 +2,9 @@
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 import random
-from app.core.logging import logger
-from app.core.errors import BuildingDetectionError
-from app.utils import sqft_to_sqm
+from ..core.logging import logger
+from ..core.errors import BuildingDetectionError
+from ..utils import sqft_to_sqm
 
 
 @dataclass

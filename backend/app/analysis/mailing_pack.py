@@ -3,9 +3,9 @@ from typing import Dict, Optional
 from datetime import datetime
 from jinja2 import Template
 import uuid
-from app.core.logging import logger
-from app.core.errors import MailingPackError
-from app.utils import ensure_output_dir, save_file
+from ..core.logging import logger
+from ..core.errors import MailingPackError
+from ..utils import ensure_output_dir, save_file
 
 
 class MailingPackGenerator:

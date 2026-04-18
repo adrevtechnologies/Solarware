@@ -1,8 +1,8 @@
 """Contact data enrichment."""
 from typing import Dict, Optional, List
 import asyncio
-from app.core.logging import logger
-from app.core.errors import ContactEnrichmentError
+from ..core.logging import logger
+from ..core.errors import ContactEnrichmentError
 
 
 class ContactEnricher:

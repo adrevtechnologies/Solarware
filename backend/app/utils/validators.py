@@ -1,5 +1,5 @@
 """Utility validators and helpers."""
-from app.core.errors import ValidationError
+from ..core.errors import ValidationError
 
 
 def validate_coordinates(latitude: float, longitude: float) -> bool:

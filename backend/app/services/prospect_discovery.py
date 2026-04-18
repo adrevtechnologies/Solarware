@@ -7,11 +7,11 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.core.logging import logger
-from app.core.database import get_db_context
-from app.models import SearchArea, Prospect, Contact
-from app.integrations.satellite_providers import MockSatelliteProvider
-from app.utils import calculate_solar_analysis
+from ..core.logging import logger
+from ..core.database import get_db_context
+from ..models import SearchArea, Prospect, Contact
+from ..integrations.satellite_providers import MockSatelliteProvider
+from ..utils import calculate_solar_analysis
 
 
 PROCESSING_STATUS: Dict[str, Dict] = {}

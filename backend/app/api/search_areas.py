@@ -4,12 +4,12 @@ from typing import List
 import uuid
 from sqlalchemy.orm import Session
 
-from app.core import get_db
-from app.models import SearchArea
-from app.schemas import SearchAreaCreate, SearchAreaResponse
-from app.utils import validate_search_bounds
-from app.utils.address_geocoder import AddressGeocoder
-from app.core.errors import ValidationError
+from ..core import get_db
+from ..models import SearchArea
+from ..schemas import SearchAreaCreate, SearchAreaResponse
+from ..utils import validate_search_bounds
+from ..utils.address_geocoder import AddressGeocoder
+from ..core.errors import ValidationError
 
 router = APIRouter(prefix="/api/search-areas", tags=["search-areas"])
 

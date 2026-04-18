@@ -3,9 +3,9 @@ from typing import Dict, Optional
 from PIL import Image, ImageDraw, ImageFont
 import io
 import random
-from app.core.logging import logger
-from app.core.errors import VisualizationError
-from app.utils import ensure_output_dir, save_file
+from ..core.logging import logger
+from ..core.errors import VisualizationError
+from ..utils import ensure_output_dir, save_file
 
 
 class VizGenerator:
