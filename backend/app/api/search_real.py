@@ -572,12 +572,12 @@ async def search_real_prospects(
                 geo_result = reverse_geocode(building.latitude, building.longitude)
                 address = geo_result.get("address") if geo_result else f"{building.latitude}, {building.longitude}"
 
-                is_residential_exact = bool(is_exact_address and building.building_type == "residential")
-                business_name = None if is_residential_exact else building.name
-                website = None if is_residential_exact else building.website
-                phone = None if is_residential_exact else building.phone
-                email = None if is_residential_exact else building.email
-                contact_person = None if is_residential_exact else building.contact_person
+                is_residential_result = building.building_type == "residential"
+                business_name = None if is_residential_result else building.name
+                website = None if is_residential_result else building.website
+                phone = None if is_residential_result else building.phone
+                email = None if is_residential_result else building.email
+                contact_person = None if is_residential_result else building.contact_person
 
                 # Format savings display
                 savings_low = int(solar["savings_low"])
