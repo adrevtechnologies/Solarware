@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, Float, Integer, DateTime, Boolean, Text, JSON, Enum
 import uuid
 
-from app.core.database import Base
+from ..core.database import Base
 
 
 class SearchArea(Base):

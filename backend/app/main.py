@@ -7,11 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core import get_settings, setup_database, logger
-from app.core.errors import SolarwareError
-from app.models import SearchArea, Prospect  # Import models to register with Base
-from app.api import search_areas, prospects, processing, health
-from app.api.search_real import router as search_real_router
+from .core import get_settings, setup_database, logger
+from .core.errors import SolarwareError
+from .models import SearchArea, Prospect  # Import models to register with Base
+from .api import search_areas, prospects, processing, health
+from .api.search_real import router as search_real_router
 
 # Setup database
 try:

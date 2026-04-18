@@ -2,8 +2,8 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
-from app.core import get_settings
-from app.core.database import get_engine
+from ..core import get_settings
+from ..core.database import get_engine
 
 router = APIRouter(tags=["health"])
 

@@ -9,18 +9,18 @@ from typing import Optional, List
 import asyncio
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.services.nominatim_service import (
+from ..core.database import get_db
+from ..services.nominatim_service import (
     geocode_address,
     reverse_geocode,
     get_bounding_box,
 )
-from app.services.overpass_service import (
+from ..services.overpass_service import (
     query_commercial_buildings,
     filter_nearby_buildings,
 )
-from app.services.solar_calculations import get_solar_stats
-from app.services.satellite_service import get_satellite_image_url
+from ..services.solar_calculations import get_solar_stats
+from ..services.satellite_service import get_satellite_image_url
 
 logger = logging.getLogger(__name__)
 
