@@ -344,6 +344,7 @@ async def search_real_prospects(
             max_lon,
             include_residential=include_residential,
             include_all_buildings=is_exact_address,
+            min_polygon_area_sqm=20.0 if is_exact_address else 100.0,
         )
 
         if is_exact_address and not buildings:
@@ -357,6 +358,7 @@ async def search_real_prospects(
                 max_lon,
                 include_residential=True,
                 include_all_buildings=True,
+                min_polygon_area_sqm=20.0,
             )
 
         if is_exact_address:

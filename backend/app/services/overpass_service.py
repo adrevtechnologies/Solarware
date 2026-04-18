@@ -119,6 +119,7 @@ def query_commercial_buildings(
     max_lon: float,
     include_residential: bool = False,
     include_all_buildings: bool = False,
+    min_polygon_area_sqm: float = 100.0,
 ) -> List[BuildingPolygon]:
     """
     Query Overpass API for buildings, defaulting to commercial-only.
@@ -255,8 +256,8 @@ def query_commercial_buildings(
             # Calculate roof area
             roof_area_sqm = calculate_polygon_area(nodes)
 
-            # Reject if roof too small
-            if roof_area_sqm < 100:
+            # Reject tiny utility footprints unless caller explicitly lowers threshold.
+            if roof_area_sqm < min_polygon_area_sqm:
                 continue
 
             # Get center coordinates
