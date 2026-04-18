@@ -215,7 +215,7 @@ async def generate_proposal(prospect_id: str, db: Session = Depends(get_db)):
     mockup_path = await VizGenerator.generate_mockup(
         satellite_image_path=prospect.satellite_image_url,
         panel_count=prospect.estimated_panel_count or 0,
-        roof_area_sqft=prospect.roof_area_sqft,
+        roof_area_sqm=prospect.roof_area_sqm or 0,
         system_capacity_kw=prospect.estimated_system_capacity_kw or 0.0,
     )
 
