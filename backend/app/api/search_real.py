@@ -46,7 +46,6 @@ class SearchRequest(BaseModel):
     # Building type filters
     building_types: Optional[List[str]] = None  # warehouse, retail, office, school, etc
     include_residential: bool = False
-    exact_address: bool = False
     
     # Roof filters
     min_roof_sqm: Optional[int] = None
@@ -130,14 +129,15 @@ def _cache_file_for_request(request: SearchRequest) -> Path:
     cache_root.mkdir(parents=True, exist_ok=True)
 
     key_data = {
+        "mode": "address" if (request.street_name and request.street_name.strip()) else "area",
         "country": request.country,
         "province": request.province,
         "city": request.city,
         "suburb": request.suburb,
         "street_number": request.street_number,
         "street_name": request.street_name,
-        "exact_address": request.exact_address,
         "postcode": request.postcode,
+        "radius_m": request.radius_m,
         "min_roof_sqm": request.min_roof_sqm,
         "include_residential": request.include_residential,
     }
@@ -191,9 +191,7 @@ async def search_real_prospects(
                 message="Country, province/state, city, and area/suburb are required.",
             )
 
-        is_exact_address = bool(
-            request.exact_address and request.street_name and request.street_name.strip()
-        )
+        is_exact_address = bool(request.street_name and request.street_name.strip())
         logger.info("Search request: exact_address=%s", is_exact_address)
 
         if is_exact_address:
@@ -255,29 +253,6 @@ async def search_real_prospects(
             max_lon,
             include_residential=include_residential,
         )
-
-        # If exact-address search is too narrow, auto-fallback to area scope.
-        if not buildings and is_exact_address:
-            logger.info("Exact-address search returned no buildings, falling back to area scope")
-            area_geo = geocode_address(
-                request.suburb,
-                city=request.city,
-                province=request.province,
-                postcode=request.postcode or "",
-                country=request.country,
-            )
-            if area_geo:
-                center_lat, center_lon = area_geo.latitude, area_geo.longitude
-                search_area = f"{request.suburb}, {request.city}, {request.province}"
-                radius_km = max(0.5, request.radius_m / 1000.0)
-                min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, radius_km)
-                buildings = query_commercial_buildings(
-                    min_lat,
-                    max_lat,
-                    min_lon,
-                    max_lon,
-                    include_residential=include_residential,
-                )
         
         if not buildings:
             cached = _load_cached_results(request)
@@ -378,17 +353,11 @@ async def search_real_prospects(
 
         logger.info(f"Search completed: {len(results)} prospects found in {search_area}")
         
-        response_message = f"Found {len(results)} properties with solar potential in {search_area}"
-        if is_exact_address and request.street_name and search_area.startswith(f"{request.suburb},"):
-            response_message = (
-                f"No viable commercial roofs at exact address. Showing nearby area results for {search_area}."
-            )
-
         response = SearchResponse(
             results=results,
             count=len(results),
             search_area=search_area,
-            message=response_message,
+            message=f"Found {len(results)} properties with solar potential in {search_area}",
         )
         _save_cached_results(request, response)
         return response
