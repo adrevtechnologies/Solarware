@@ -59,6 +59,9 @@ def list_prospects(
     except SQLAlchemyError:
         logger.exception("Prospect query failed")
         return []
+    except Exception:
+        logger.exception("Unexpected error while loading prospects")
+        return []
 
     prospect_ids = [p.id for p in prospects]
     try:
@@ -71,42 +74,49 @@ def list_prospects(
 
     rows = []
     for prospect in prospects:
-        contact = contact_map.get(prospect.id)
-        suitability_score = int(round((getattr(prospect, "solar_confidence", 0.0) or 0.0) * 100))
-        contact_name = contact.contact_name if contact else None
-        has_verified_contact = bool(contact and (contact.email or contact.phone))
-        if not has_verified_contact:
-            contact_name = "Needs Research"
-        rows.append(
-            {
-                "id": str(prospect.id),
-                "search_area_id": str(prospect.search_area_id),
-                "latitude": getattr(prospect, "latitude", None),
-                "longitude": getattr(prospect, "longitude", None),
-                "address": getattr(prospect, "address", None),
-                "building_name": getattr(prospect, "building_name", None),
-                "business_name": getattr(prospect, "business_name", None),
-                "business_type": getattr(prospect, "business_type", None),
-                "roof_area_sqft": getattr(prospect, "roof_area_sqft", None),
-                "roof_area_sqm": getattr(prospect, "roof_area_sqm", None),
-                "has_existing_solar": getattr(prospect, "has_existing_solar", False),
-                "estimated_panel_count": getattr(prospect, "estimated_panel_count", None),
-                "estimated_system_capacity_kw": getattr(prospect, "estimated_system_capacity_kw", None),
-                "estimated_annual_production_kwh": getattr(prospect, "estimated_annual_production_kwh", None),
-                "estimated_annual_savings_usd": getattr(prospect, "estimated_annual_savings_usd", None),
-                "annual_savings_rands": getattr(prospect, "annual_savings_rands", None),
-                "solar_confidence": getattr(prospect, "solar_confidence", None),
-                "suitability_score": suitability_score,
-                "contact_name": contact_name,
-                "contact_title": contact.title if contact else None,
-                "contact_email": contact.email if contact else None,
-                "contact_phone": contact.phone if contact else None,
-                "contact_data_complete": contact.data_complete if contact else False,
-                "created_at": getattr(prospect, "created_at", None),
-            }
-        )
+        try:
+            contact = contact_map.get(prospect.id)
+            suitability_score = int(round((getattr(prospect, "solar_confidence", 0.0) or 0.0) * 100))
+            contact_name = contact.contact_name if contact else None
+            has_verified_contact = bool(contact and (contact.email or contact.phone))
+            if not has_verified_contact:
+                contact_name = "Needs Research"
+            rows.append(
+                {
+                    "id": str(prospect.id),
+                    "search_area_id": str(prospect.search_area_id),
+                    "latitude": getattr(prospect, "latitude", None),
+                    "longitude": getattr(prospect, "longitude", None),
+                    "address": getattr(prospect, "address", None),
+                    "building_name": getattr(prospect, "building_name", None),
+                    "business_name": getattr(prospect, "business_name", None),
+                    "business_type": getattr(prospect, "business_type", None),
+                    "roof_area_sqft": getattr(prospect, "roof_area_sqft", None),
+                    "roof_area_sqm": getattr(prospect, "roof_area_sqm", None),
+                    "has_existing_solar": getattr(prospect, "has_existing_solar", False),
+                    "estimated_panel_count": getattr(prospect, "estimated_panel_count", None),
+                    "estimated_system_capacity_kw": getattr(prospect, "estimated_system_capacity_kw", None),
+                    "estimated_annual_production_kwh": getattr(prospect, "estimated_annual_production_kwh", None),
+                    "estimated_annual_savings_usd": getattr(prospect, "estimated_annual_savings_usd", None),
+                    "annual_savings_rands": getattr(prospect, "annual_savings_rands", None),
+                    "solar_confidence": getattr(prospect, "solar_confidence", None),
+                    "suitability_score": suitability_score,
+                    "contact_name": contact_name,
+                    "contact_title": contact.title if contact else None,
+                    "contact_email": contact.email if contact else None,
+                    "contact_phone": contact.phone if contact else None,
+                    "contact_data_complete": contact.data_complete if contact else False,
+                    "created_at": getattr(prospect, "created_at", None),
+                }
+            )
+        except Exception:
+            logger.exception("Failed to serialize prospect row")
+            continue
 
-    rows.sort(key=lambda item: item["suitability_score"], reverse=True)
+    try:
+        rows.sort(key=lambda item: item["suitability_score"], reverse=True)
+    except Exception:
+        logger.exception("Failed to sort prospects list")
     return rows
 
 
