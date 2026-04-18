@@ -1,5 +1,5 @@
 import React from 'react';
-import { Prospect } from './ResultsTable';
+import { Prospect } from '../types';
 
 interface LeadCardProps {
   prospect: Prospect;
@@ -22,15 +22,20 @@ export const LeadCard: React.FC<LeadCardProps> = ({ prospect, onProposal }) => {
         {/* Property Info */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-xs text-gray-500 font-semibold">Property Type</p>
-            <p className="text-sm font-medium text-gray-900">{prospect.property_type || '-'}</p>
+            <p className="text-xs text-gray-500 font-semibold">Building Type</p>
+            <p className="text-sm font-medium text-gray-900">{prospect.building_type || '-'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500 font-semibold">Roof Area</p>
             <p className="text-sm font-medium text-gray-900">
-              {prospect.roof_size_sqft.toLocaleString()} sqft
+              {Math.round(prospect.roof_area_sqm).toLocaleString()} m2
             </p>
           </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-gray-500 font-semibold">Savings Potential</p>
+          <p className="text-sm font-medium text-green-700">{prospect.savings_potential_display}</p>
         </div>
 
         {/* Solar Score */}
@@ -62,46 +67,11 @@ export const LeadCard: React.FC<LeadCardProps> = ({ prospect, onProposal }) => {
             </div>
           </div>
         </div>
-
-        {/* Contact Status */}
-        <div>
-          <p className="text-xs text-gray-500 font-semibold mb-1">Contact Status</p>
-          <span
-            className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-              prospect.contact_status === 'Verified'
-                ? 'bg-green-100 text-green-800'
-                : prospect.contact_status === 'Partial'
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : 'bg-red-100 text-red-800'
-            }`}
-          >
-            {prospect.contact_status}
-          </span>
-        </div>
-
-        {/* Contact Info */}
-        <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-          {prospect.phone && (
-            <div>
-              <p className="text-xs text-gray-500 font-semibold">Phone</p>
-              <p className="text-sm text-gray-900">{prospect.phone}</p>
-            </div>
-          )}
-          {prospect.email && (
-            <div>
-              <p className="text-xs text-gray-500 font-semibold">Email</p>
-              <p className="text-sm text-gray-900">{prospect.email}</p>
-            </div>
-          )}
-          {!prospect.phone && !prospect.email && (
-            <p className="text-xs text-gray-500">No contact info available</p>
-          )}
-        </div>
       </div>
 
       {/* Footer */}
       <button
-        onClick={() => onProposal(prospect.id)}
+        onClick={() => onProposal(prospect.osm_id)}
         className="w-full bg-green-600 text-white font-bold py-3 hover:bg-green-700 transition border-t border-gray-200"
       >
         View Proposal

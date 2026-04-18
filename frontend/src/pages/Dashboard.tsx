@@ -26,7 +26,7 @@ export const Dashboard: React.FC = () => {
       // Build search payload based on mode
       const payload: any = {
         mode,
-        radius_m: filters.radius || 500,
+        radius_m: 500,
       };
 
       if (mode === 'address') {
@@ -50,13 +50,15 @@ export const Dashboard: React.FC = () => {
       }
 
       // Add building type filters
-      if (filters.buildingTypes && filters.buildingTypes.length > 0) {
-        payload.building_types = filters.buildingTypes;
+      if (filters.warehousesOnly) {
+        payload.building_types = ['warehouse'];
+      } else if (filters.schoolsOnly) {
+        payload.building_types = ['school'];
       }
 
       // Add roof size filter
-      if (filters.minRoofSqm) {
-        payload.min_roof_sqm = filters.minRoofSqm;
+      if (filters.minRoofSize) {
+        payload.min_roof_sqm = Math.round(filters.minRoofSize / 10.764); // sqft to sqm
       }
 
       const response = await fetch(`${apiUrl}/api/search`, {
@@ -74,7 +76,9 @@ export const Dashboard: React.FC = () => {
       setSearchMessage(data.message || '');
     } catch (error) {
       console.error('Search error:', error);
-      setSearchMessage(`❌ Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setSearchMessage(
+        `❌ Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
       setResults([]);
     } finally {
       setLoading(false);
@@ -123,9 +127,7 @@ export const Dashboard: React.FC = () => {
                     ? `✓ Found ${results.length} Solar Opportunities`
                     : 'Solar Prospects'}
                 </h2>
-                {searchMessage && (
-                  <p className="text-sm text-gray-600 mt-2">{searchMessage}</p>
-                )}
+                {searchMessage && <p className="text-sm text-gray-600 mt-2">{searchMessage}</p>}
               </div>
 
               {/* Results Table */}
@@ -151,7 +153,6 @@ export const Dashboard: React.FC = () => {
         />
       )}
     </div>
-  );
   );
 };
 

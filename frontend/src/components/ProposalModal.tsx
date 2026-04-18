@@ -1,25 +1,14 @@
 import React from 'react';
+import { Prospect } from '../types';
 
 interface ProposalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  prospect?: {
-    id: string;
-    address: string;
-    business_name?: string;
-    roof_size_sqft: number;
-    solar_score: number;
-  };
+  prospect?: Prospect;
 }
 
 export const ProposalModal: React.FC<ProposalModalProps> = ({ isOpen, onClose, prospect }) => {
   if (!isOpen || !prospect) return null;
-
-  // Simple estimation calculations
-  const systemSizeKw = Math.round((prospect.roof_size_sqft / 100) * 0.15);
-  const monthlySavingsLow = Math.round(systemSizeKw * 300);
-  const monthlySavingsHigh = Math.round(systemSizeKw * 500);
-  const paybackYears = Math.round(((systemSizeKw * 100000) / (monthlySavingsLow * 12)) * 10) / 10;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -32,29 +21,33 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({ isOpen, onClose, p
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* System Size */}
+          {/* Capacity */}
           <div className="border-b pb-4">
-            <p className="text-sm text-gray-600 mb-1">Estimated System Size</p>
-            <p className="text-3xl font-bold text-green-600">{systemSizeKw} kW</p>
+            <p className="text-sm text-gray-600 mb-1">Estimated Solar Capacity</p>
+            <p className="text-3xl font-bold text-green-600">
+              {prospect.capacity_low_kw.toFixed(1)} - {prospect.capacity_high_kw.toFixed(1)} kW
+            </p>
             <p className="text-xs text-gray-500 mt-1">
-              Based on {prospect.roof_size_sqft} sqft roof
+              Based on {Math.round(prospect.roof_area_sqm).toLocaleString()} m2 roof area
             </p>
           </div>
 
-          {/* Monthly Savings */}
+          {/* Annual Generation */}
           <div className="border-b pb-4">
-            <p className="text-sm text-gray-600 mb-1">Estimated Monthly Savings</p>
+            <p className="text-sm text-gray-600 mb-1">Estimated Annual Generation</p>
             <p className="text-2xl font-bold text-green-600">
-              R{monthlySavingsLow.toLocaleString()} - R{monthlySavingsHigh.toLocaleString()}
+              {Math.round(prospect.annual_kwh).toLocaleString()} kWh
             </p>
-            <p className="text-xs text-gray-500 mt-1">ZAR per month</p>
+            <p className="text-xs text-gray-500 mt-1">Based on regional solar yield</p>
           </div>
 
-          {/* Payback Period */}
+          {/* Savings */}
           <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600 mb-1">Estimated Payback Period</p>
-            <p className="text-3xl font-bold text-green-600">{paybackYears} years</p>
-            <p className="text-xs text-gray-500 mt-1">Before full ROI</p>
+            <p className="text-sm text-gray-600 mb-1">Estimated Annual Savings Potential</p>
+            <p className="text-3xl font-bold text-green-600">
+              {prospect.savings_potential_display}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Tariff scenarios R1.80 to R3.20 per kWh</p>
           </div>
 
           {/* Solar Score */}
@@ -67,7 +60,7 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({ isOpen, onClose, p
 
           {/* CTA */}
           <button className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">
-            📅 Book Appointment
+            Generate Proposal
           </button>
         </div>
 
