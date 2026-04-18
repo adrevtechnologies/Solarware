@@ -1,6 +1,6 @@
 """Visualization generation."""
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from PIL import Image, ImageDraw
 import io
 import math
@@ -20,6 +20,8 @@ class VizGenerator:
         panel_count: int,
         roof_area_sqm: float,
         system_capacity_kw: float,
+        roof_polygon: Optional[List[Tuple[float, float]]] = None,
+        image_bbox: Optional[Tuple[float, float, float, float]] = None,
         output_path: Optional[str] = None,
     ) -> str:
         """Generate solar panel mockup visualization.
@@ -46,6 +48,8 @@ class VizGenerator:
                 panel_count=panel_count,
                 roof_area_sqm=roof_area_sqm,
                 system_capacity_kw=system_capacity_kw,
+                roof_polygon=roof_polygon,
+                image_bbox=image_bbox,
             )
             
             # Save image
@@ -106,15 +110,107 @@ class VizGenerator:
         return panels
 
     @staticmethod
+    def _point_in_polygon(point: Tuple[float, float], polygon: List[Tuple[float, float]]) -> bool:
+        x, y = point
+        inside = False
+        j = len(polygon) - 1
+        for i in range(len(polygon)):
+            xi, yi = polygon[i]
+            xj, yj = polygon[j]
+            intersects = ((yi > y) != (yj > y)) and (
+                x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi
+            )
+            if intersects:
+                inside = not inside
+            j = i
+        return inside
+
+    @staticmethod
+    def _geo_polygon_to_pixel(
+        polygon: List[Tuple[float, float]],
+        image_bbox: Tuple[float, float, float, float],
+        width: int,
+        height: int,
+    ) -> List[Tuple[float, float]]:
+        min_lat, max_lat, min_lon, max_lon = image_bbox
+        lat_span = (max_lat - min_lat) or 1e-9
+        lon_span = (max_lon - min_lon) or 1e-9
+
+        px = []
+        for lat, lon in polygon:
+            x = (lon - min_lon) / lon_span * width
+            y = (max_lat - lat) / lat_span * height
+            px.append((x, y))
+        return px
+
+    @staticmethod
+    def _draw_panels_in_polygon(
+        draw: ImageDraw.ImageDraw,
+        polygon_px: List[Tuple[float, float]],
+        panel_count: int,
+    ) -> int:
+        xs = [p[0] for p in polygon_px]
+        ys = [p[1] for p in polygon_px]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+
+        panel_w = 22
+        panel_h = 12
+        spacing = 3
+
+        placed = 0
+        y = min_y
+        while y + panel_h <= max_y and placed < panel_count:
+            x = min_x
+            while x + panel_w <= max_x and placed < panel_count:
+                corners = [
+                    (x, y),
+                    (x + panel_w, y),
+                    (x + panel_w, y + panel_h),
+                    (x, y + panel_h),
+                ]
+                if all(VizGenerator._point_in_polygon(c, polygon_px) for c in corners):
+                    draw.polygon(corners, fill=(15, 48, 87, 220), outline=(90, 170, 255, 255))
+                    placed += 1
+                x += panel_w + spacing
+            y += panel_h + spacing
+
+        return placed
+
+    @staticmethod
     def _create_panel_overlay(
         satellite_image_path: Optional[str],
         panel_count: int,
         roof_area_sqm: float,
-        system_capacity_kw: float
+        system_capacity_kw: float,
+        roof_polygon: Optional[List[Tuple[float, float]]] = None,
+        image_bbox: Optional[Tuple[float, float, float, float]] = None,
     ) -> Image.Image:
         """Create a geometric solar panel overlay on a real satellite image."""
         img = VizGenerator._load_satellite_image(satellite_image_path).resize((800, 600))
         draw = ImageDraw.Draw(img)
+
+        placed = 0
+
+        if roof_polygon and image_bbox and len(roof_polygon) >= 3:
+            polygon_px = VizGenerator._geo_polygon_to_pixel(
+                polygon=roof_polygon,
+                image_bbox=image_bbox,
+                width=800,
+                height=600,
+            )
+            draw.polygon(polygon_px, outline=(255, 64, 64, 255), width=3)
+            placed = VizGenerator._draw_panels_in_polygon(
+                draw=draw,
+                polygon_px=polygon_px,
+                panel_count=max(0, panel_count),
+            )
+
+        if placed > 0:
+            legend = f"Panels: {placed} | Capacity: {system_capacity_kw:.1f} kW | Roof: {roof_area_sqm:.0f} sqm"
+            draw.rectangle((12, 12, 620, 44), fill=(0, 0, 0, 160))
+            draw.text((20, 20), legend, fill=(255, 255, 255))
+            return img
 
         # Approximate a roof envelope in image space and rotate panel rows.
         roof_center = (400.0, 310.0)

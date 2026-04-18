@@ -38,6 +38,8 @@ export interface Prospect {
   satellite_image_url: string;
   latitude: number;
   longitude: number;
+  roof_polygon?: [number, number][];
+  image_bbox?: [number, number, number, number];
 }
 
 export interface SearchRequestV1 {
