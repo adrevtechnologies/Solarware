@@ -118,6 +118,7 @@ def query_commercial_buildings(
     min_lon: float,
     max_lon: float,
     include_residential: bool = False,
+    include_all_buildings: bool = False,
 ) -> List[BuildingPolygon]:
     """
     Query Overpass API for buildings, defaulting to commercial-only.
@@ -131,26 +132,36 @@ def query_commercial_buildings(
     """
     bbox_str = f"{min_lat},{min_lon},{max_lat},{max_lon}"
     
-    residential_clause = ""
-    if include_residential:
-        residential_clause = """
-        way[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
-        relation[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+    if include_all_buildings:
+        query = f"""
+        [bbox:{bbox_str}];
+        (
+            way["building"];
+            relation["building"];
+        );
+        out geom;
         """
+    else:
+        residential_clause = ""
+        if include_residential:
+            residential_clause = """
+            way[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+            relation[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+            """
 
-    # Overpass QL query for commercial buildings (and optional residential)
-    query = f"""
-    [bbox:{bbox_str}];
-    (
-        way["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
-        way["building:use"~"commercial|industrial|retail|office|warehouse|mall|business_park"];
-        way["office"];
-        way["landuse"~"industrial|commercial"];
-        relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
-        {residential_clause}
-    );
-    out geom;
-    """
+        # Overpass QL query for commercial buildings (and optional residential)
+        query = f"""
+        [bbox:{bbox_str}];
+        (
+            way["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+            way["building:use"~"commercial|industrial|retail|office|warehouse|mall|business_park"];
+            way["office"];
+            way["landuse"~"industrial|commercial"];
+            relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+            {residential_clause}
+        );
+        out geom;
+        """
 
     try:
         xml_text = _query_overpass_xml(query)
@@ -207,7 +218,7 @@ def query_commercial_buildings(
                 category = "residential"
 
             # For commercial mode, reject residential and small utility structures.
-            if not include_residential and category in ["residential", "house", "hut", "garage", "shed", ""]:
+            if not include_residential and not include_all_buildings and category in ["residential", "house", "hut", "garage", "shed", ""]:
                 continue
 
             # Even residential mode should still skip utility/non-target structures.
@@ -271,7 +282,10 @@ def query_commercial_buildings(
             buildings.append(building)
             logger.debug(f"Found building: {building.name or category} ({roof_area_sqm:.0f} sqm)")
 
-        mode_label = "commercial + residential" if include_residential else "commercial"
+        if include_all_buildings:
+            mode_label = "all mapped buildings"
+        else:
+            mode_label = "commercial + residential" if include_residential else "commercial"
         logger.info(f"Overpass query found {len(buildings)} {mode_label} buildings")
         return buildings
 

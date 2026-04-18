@@ -334,6 +334,7 @@ async def search_real_prospects(
             min_lon,
             max_lon,
             include_residential=include_residential,
+            include_all_buildings=is_exact_address,
         )
 
         if is_exact_address and not buildings:
@@ -346,10 +347,11 @@ async def search_real_prospects(
                 min_lon,
                 max_lon,
                 include_residential=True,
+                include_all_buildings=True,
             )
 
         if is_exact_address:
-            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=30.0)
+            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
             if not target_building:
                 return SearchResponse(
                     results=[],
