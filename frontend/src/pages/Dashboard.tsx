@@ -48,12 +48,13 @@ export const Dashboard: React.FC = () => {
 
   const handleSearch = async () => {
     setLoading(true);
-    setSearchMessage('');
+    setSearchMessage('Searching...');
 
     try {
       const streetParts = splitStreetInput(searchParams.street);
+      const isExactMode = !!streetParts.street_name;
       const payload = {
-        mode: streetParts.street_name ? 'address' : 'area',
+        mode: isExactMode ? 'address' : 'area',
         country: searchParams.country,
         province: searchParams.province,
         city: searchParams.city,
@@ -61,15 +62,64 @@ export const Dashboard: React.FC = () => {
         street_number: streetParts.street_number,
         street_name: streetParts.street_name,
         postcode: searchParams.postalCode,
-        radius_m: streetParts.street_name ? 300 : 1500,
+        radius_m: isExactMode ? 300 : 1500,
         include_residential: false,
         min_roof_sqm: searchParams.minRoofSqm || 150,
       };
 
+      console.info('[Solarware] search:start', {
+        mode: payload.mode,
+        suburb: payload.suburb,
+        city: payload.city,
+        province: payload.province,
+      });
+
       const response = await api.searchProspects(payload);
-      setResults(response.data.results || []);
-      setSearchMessage(response.data.message || '');
+      const exactCount = response.data.count ?? (response.data.results || []).length;
+
+      console.info('[Solarware] search:done', {
+        mode: payload.mode,
+        count: exactCount,
+        message: response.data.message,
+      });
+
+      if (isExactMode && exactCount === 0) {
+        const areaFallbackPayload = {
+          ...payload,
+          mode: 'area' as const,
+          street_number: undefined,
+          street_name: undefined,
+          radius_m: 1500,
+        };
+
+        console.info('[Solarware] search:fallback-area:start', {
+          suburb: areaFallbackPayload.suburb,
+          city: areaFallbackPayload.city,
+          province: areaFallbackPayload.province,
+        });
+
+        const areaResponse = await api.searchProspects(areaFallbackPayload);
+        const areaCount = areaResponse.data.count ?? (areaResponse.data.results || []).length;
+
+        console.info('[Solarware] search:fallback-area:done', {
+          count: areaCount,
+          message: areaResponse.data.message,
+        });
+
+        setResults(areaResponse.data.results || []);
+        if (areaCount > 0) {
+          setSearchMessage(
+            'No exact commercial match for that street address. Showing area results instead.'
+          );
+        } else {
+          setSearchMessage(response.data.message || areaResponse.data.message || '');
+        }
+      } else {
+        setResults(response.data.results || []);
+        setSearchMessage(response.data.message || '');
+      }
     } catch (error) {
+      console.error('[Solarware] search:error', error);
       setResults([]);
       setSearchMessage(
         `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
