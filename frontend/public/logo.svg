@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 700" role="img" aria-label="Solarware logo">
+  <defs>
+    <linearGradient id="sunGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd54a"/>
+      <stop offset="100%" stop-color="#f7b500"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="700" fill="#ffffff"/>
+
+  <g transform="translate(250 265)">
+    <circle cx="0" cy="0" r="135" fill="url(#sunGrad)"/>
+    <g fill="#f7b500">
+      <polygon points="0,-210 20,-160 -20,-160"/>
+      <polygon points="88,-193 95,-145 55,-160"/>
+      <polygon points="158,-140 132,-98 110,-132"/>
+      <polygon points="203,-63 155,-45 155,-85"/>
+      <polygon points="210,25 158,10 180,-20"/>
+      <polygon points="175,110 130,70 165,58"/>
+      <polygon points="105,175 82,128 122,130"/>
+      <polygon points="18,210 18,157 52,178"/>
+      <polygon points="-74,198 -47,152 -18,182"/>
+      <polygon points="-150,148 -103,120 -98,160"/>
+      <polygon points="-198,78 -148,69 -166,105"/>
+      <polygon points="-212,-8 -160,7 -185,34"/>
+      <polygon points="-190,-95 -140,-71 -170,-45"/>
+      <polygon points="-132,-164 -103,-120 -142,-118"/>
+      <polygon points="-55,-203 -53,-150 -88,-170"/>
+    </g>
+    <circle cx="0" cy="0" r="140" fill="none" stroke="#ffffff" stroke-width="16"/>
+  </g>
+
+  <g transform="translate(405 205)">
+    <polygon points="0,130 305,0 870,0 980,80 210,80" fill="#0b4677"/>
+    <rect x="305" y="22" width="560" height="48" fill="none" stroke="#ffffff" stroke-width="5"/>
+    <g stroke="#ffffff" stroke-width="3">
+      <line x1="305" y1="46" x2="865" y2="46"/>
+      <line x1="370" y1="22" x2="400" y2="70"/>
+      <line x1="430" y1="22" x2="460" y2="70"/>
+      <line x1="490" y1="22" x2="520" y2="70"/>
+      <line x1="550" y1="22" x2="580" y2="70"/>
+      <line x1="610" y1="22" x2="640" y2="70"/>
+      <line x1="670" y1="22" x2="700" y2="70"/>
+      <line x1="730" y1="22" x2="760" y2="70"/>
+      <line x1="790" y1="22" x2="820" y2="70"/>
+    </g>
+  </g>
+
+  <text x="355" y="540" font-size="170" font-family="Poppins, Segoe UI, Arial, sans-serif" fill="#0b4677" letter-spacing="1">Solarware</text>
+</svg>
