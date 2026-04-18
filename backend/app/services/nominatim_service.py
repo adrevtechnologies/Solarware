@@ -4,6 +4,7 @@ FREE - NO API KEY REQUIRED
 """
 import requests
 import logging
+import math
 from typing import Optional, Dict, Tuple, List
 from pydantic import BaseModel
 
@@ -119,9 +120,10 @@ def get_bounding_box(latitude: float, longitude: float, radius_km: float = 1.0) 
     Get bounding box around coordinates for search radius
     RETURNS: (min_lat, max_lat, min_lon, max_lon)
     """
-    # 1 degree ≈ 111 km at equator
+    # 1 degree latitude ≈ 111 km. Longitude shrinks by cos(latitude).
     lat_delta = radius_km / 111.0
-    lon_delta = radius_km / (111.0 * abs(latitude))  # Adjust for latitude
+    cos_lat = max(0.01, abs(math.cos(math.radians(latitude))))
+    lon_delta = radius_km / (111.0 * cos_lat)
 
     return (
         latitude - lat_delta,
