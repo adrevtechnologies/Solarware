@@ -11,6 +11,8 @@ from .core import get_settings, setup_database, logger
 from .core.errors import SolarwareError
 from .models import SearchArea, Prospect  # Import models to register with Base
 from .api import health
+from .api.search_areas import router as search_areas_router
+from .api.prospects import router as prospects_router
 from .api.search_real import router as search_real_router
 
 # Setup database
@@ -75,4 +77,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(health.router)
+app.include_router(search_areas_router)
+app.include_router(prospects_router)
 app.include_router(search_real_router)
