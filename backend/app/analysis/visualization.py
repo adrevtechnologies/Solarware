@@ -187,7 +187,8 @@ class VizGenerator:
         image_bbox: Optional[Tuple[float, float, float, float]] = None,
     ) -> Image.Image:
         """Create a geometric solar panel overlay on a real satellite image."""
-        img = VizGenerator._load_satellite_image(satellite_image_path).resize((800, 600))
+        img = VizGenerator._load_satellite_image(satellite_image_path)
+        width, height = img.size
         draw = ImageDraw.Draw(img)
 
         placed = 0
@@ -196,8 +197,8 @@ class VizGenerator:
             polygon_px = VizGenerator._geo_polygon_to_pixel(
                 polygon=roof_polygon,
                 image_bbox=image_bbox,
-                width=800,
-                height=600,
+                width=width,
+                height=height,
             )
             draw.polygon(polygon_px, outline=(255, 64, 64, 255), width=3)
             placed = VizGenerator._draw_panels_in_polygon(
@@ -213,9 +214,9 @@ class VizGenerator:
             return img
 
         # Approximate a roof envelope in image space and rotate panel rows.
-        roof_center = (400.0, 310.0)
-        roof_width = 520.0
-        roof_height = 280.0
+        roof_center = (width / 2.0, height / 2.0)
+        roof_width = width * 0.65
+        roof_height = height * 0.46
         roof_angle = -12
 
         panel_w = 24.0
