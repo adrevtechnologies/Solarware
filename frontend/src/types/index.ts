@@ -17,46 +17,14 @@ export interface SearchArea {
 
 export interface Prospect {
   id: string;
-  search_area_id: string;
   address: string;
-  building_name?: string;
   business_name?: string;
-  latitude: number;
-  longitude: number;
-  roof_area_sqft: number;
-  roof_area_sqm: number;
-  estimated_panel_count?: number;
-  estimated_system_capacity_kw?: number;
-  estimated_annual_production_kwh?: number;
-  estimated_annual_savings_usd?: number;
-  has_existing_solar: boolean;
-
-  // Cost breakdown
-  panel_cost?: number;
-  inverter_cost?: number;
-  battery_cost?: number;
-  cable_cost?: number;
-  installation_labor?: number;
-  soft_costs?: number;
-  total_bos_cost?: number;
-
-  // Installation timeline
-  installation_calendar_days?: number;
-  installation_team_size?: number;
-  installation_casual_workers?: number;
-
-  // ROI metrics
-  roi_simple_payback_years?: number;
-  roi_npv_25_years?: number;
-  roi_cumulative_savings_25_years?: number;
-  roi_percentage?: number;
-
-  // Layout efficiency
-  strings?: number;
-  rows?: number;
-  layout_efficiency?: number;
-
-  created_at: string;
+  property_type?: string;
+  roof_size_sqft: number;
+  solar_score: number;
+  contact_status: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface Contact {

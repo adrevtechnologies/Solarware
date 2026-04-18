@@ -48,11 +48,8 @@ def list_prospects(
     query = db.query(Prospect)
 
     if search_area_id:
-        try:
-            area_uuid = uuid.UUID(search_area_id)
-            query = query.filter(Prospect.search_area_id == area_uuid)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid search area ID format") from exc
+        # search_area_id is now a string, not UUID, so we don't need to convert
+        query = query.filter(Prospect.search_area_id == search_area_id)
 
     prospects = query.offset(skip).limit(limit).all()
     prospect_ids = [p.id for p in prospects]

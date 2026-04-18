@@ -71,7 +71,7 @@ class ProspectDiscoveryService:
         """Process a search area end-to-end.
         
         Args:
-            search_area_id: UUID of search area
+            search_area_id: UUID of search area (as string)
             generate_visualizations: Whether to generate solar mockups
             enrich_contacts: Whether to enrich contact data
             generate_packs: Whether to generate mailing packs
@@ -206,7 +206,7 @@ class ProspectDiscoveryService:
             raise RuntimeError(f"OSM fetch failed across endpoints: {str(last_error)}")
         return []
 
-    def _create_fallback_prospects(self, db, search_area, search_area_id: str, wkt_element_cls) -> int:
+    def _create_fallback_prospects(self, db, search_area, search_area_id) -> int:
         """Create deterministic fallback prospects if OSM is temporarily unavailable."""
         created = 0
         min_area_sqft = float(search_area.min_roof_area_sqft)
@@ -243,15 +243,14 @@ class ProspectDiscoveryService:
                 roof_area_sqm=roof_sqm,
                 country=search_area.country,
                 region=search_area.region,
-                include_costs=False,
+                include_costs=True,
             )
 
-            point = wkt_element_cls(f"POINT({lon} {lat})", srid=4326)
             prospect = Prospect(
                 search_area_id=search_area_id,
                 latitude=lat,
                 longitude=lon,
-                geometry=point,
+                geometry_wkt=f"POINT({lon} {lat})",
                 address=address,
                 business_name=company,
                 business_type=kind,
@@ -259,11 +258,22 @@ class ProspectDiscoveryService:
                 roof_area_sqm=round(roof_sqm, 2),
                 estimated_panel_count=solar.get("panel_count"),
                 estimated_system_capacity_kw=solar.get("system_capacity_kw"),
-                estimated_annual_production_kwh=None,
-                estimated_annual_savings_usd=None,
-                annual_savings_rands=None,
+                estimated_annual_production_kwh=solar.get("annual_production_kwh"),
+                estimated_annual_savings_usd=solar.get("annual_savings"),
+                annual_savings_rands=solar.get("annual_savings"),  # Same value for now
                 solar_confidence=self._suitability_score(roof_sqft, has_existing_solar=False),
-                local_electricity_rate_per_kwh=2.50,
+                local_electricity_rate_per_kwh=solar.get("electricity_rate_per_kwh", 2.50),
+                layout_efficiency=solar.get("layout_efficiency"),
+                total_bos_cost=solar.get("total_bos_cost"),
+                panel_cost=solar.get("panel_cost"),
+                inverter_cost=solar.get("inverter_cost"),
+                battery_cost=solar.get("battery_cost"),
+                installation_cost=solar.get("installation_labor"),
+                soft_costs=solar.get("soft_costs"),
+                roi_simple_payback_years=solar.get("roi_simple_payback_years"),
+                roi_percentage_20yr=solar.get("roi_percentage"),
+                satellite_image_url=f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=18&size=400x400&maptype=satellite",
+                mockup_image_url=f"https://via.placeholder.com/400x400/FFB347/000000?text=Solar+Mockup",
             )
             db.add(prospect)
             db.flush()
@@ -286,23 +296,21 @@ class ProspectDiscoveryService:
         logger.info(f"Created {created} fallback prospects")
         return created
 
-    def _create_osm_prospects(self, db, search_area, search_area_id: str) -> int:
+    def _create_osm_prospects(self, db, search_area, search_area_id) -> int:
         """Create prospects from real OSM buildings in the selected search area."""
         created = 0
         min_area_sqft = float(search_area.min_roof_area_sqft)
 
         try:
-            from geoalchemy2 import WKTElement
-
             try:
                 buildings = self._fetch_osm_buildings(search_area)
             except Exception as fetch_err:
                 logger.warning(f"Falling back to deterministic prospects: {str(fetch_err)}")
-                return self._create_fallback_prospects(db, search_area, search_area_id, WKTElement)
+                return self._create_fallback_prospects(db, search_area, search_area_id)
 
             if not buildings:
                 logger.warning("OSM returned no buildings; using deterministic fallback prospects")
-                return self._create_fallback_prospects(db, search_area, search_area_id, WKTElement)
+                return self._create_fallback_prospects(db, search_area, search_area_id)
 
             for building in buildings:
                 geometry = building.get("geometry") or []
@@ -331,17 +339,16 @@ class ProspectDiscoveryService:
                     roof_area_sqm=area_sqm,
                     country=search_area.country,
                     region=search_area.region,
-                    include_costs=False,
+                    include_costs=True,
                 )
                 suitability = self._suitability_score(area_sqft, has_existing_solar=False)
                 business_type = tags.get("building") or self._business_type_from_area(area_sqft)
 
-                point = WKTElement(f"POINT({centroid_lon} {centroid_lat})", srid=4326)
                 prospect = Prospect(
                     search_area_id=search_area_id,
                     latitude=centroid_lat,
                     longitude=centroid_lon,
-                    geometry=point,
+                    geometry_wkt=f"POINT({centroid_lon} {centroid_lat})",
                     address=address,
                     business_name=tags.get("name") or None,
                     business_type=str(business_type).title(),
@@ -349,11 +356,22 @@ class ProspectDiscoveryService:
                     roof_area_sqm=round(area_sqm, 2),
                     estimated_panel_count=solar.get("panel_count"),
                     estimated_system_capacity_kw=solar.get("system_capacity_kw"),
-                    estimated_annual_production_kwh=None,
-                    estimated_annual_savings_usd=None,
-                    annual_savings_rands=None,
+                    estimated_annual_production_kwh=solar.get("annual_production_kwh"),
+                    estimated_annual_savings_usd=solar.get("annual_savings"),
+                    annual_savings_rands=solar.get("annual_savings"),
                     solar_confidence=suitability,
-                    local_electricity_rate_per_kwh=2.50,
+                    local_electricity_rate_per_kwh=solar.get("electricity_rate_per_kwh", 2.50),
+                    layout_efficiency=solar.get("layout_efficiency"),
+                    total_bos_cost=solar.get("total_bos_cost"),
+                    panel_cost=solar.get("panel_cost"),
+                    inverter_cost=solar.get("inverter_cost"),
+                    battery_cost=solar.get("battery_cost"),
+                    installation_cost=solar.get("installation_labor"),
+                    soft_costs=solar.get("soft_costs"),
+                    roi_simple_payback_years=solar.get("roi_simple_payback_years"),
+                    roi_percentage_20yr=solar.get("roi_percentage"),
+                    satellite_image_url=f"https://maps.googleapis.com/maps/api/staticmap?center={centroid_lat},{centroid_lon}&zoom=18&size=400x400&maptype=satellite",
+                    mockup_image_url=f"https://via.placeholder.com/400x400/FFB347/000000?text=Solar+Mockup",
                 )
                 db.add(prospect)
                 db.flush()

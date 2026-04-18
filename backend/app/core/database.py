@@ -27,8 +27,13 @@ def get_engine():
 def get_async_engine():
     """Get asynchronous database engine."""
     settings = get_settings()
-    # Convert postgresql:// to postgresql+asyncpg://
-    async_url = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # For SQLite, we can't use asyncpg, so return a regular engine wrapped as async
+    if "sqlite" in settings.DATABASE_URL.lower():
+        # SQLite doesn't support true async, so we'll use aiosqlite
+        async_url = settings.DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    else:
+        # Convert postgresql:// to postgresql+asyncpg://
+        async_url = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     return create_async_engine(
         async_url,
         echo=settings.DATABASE_ECHO,
@@ -42,16 +47,24 @@ def setup_database():
     settings = get_settings()
     engine = get_engine()
     
-    # Create database if it doesn't exist
-    if not database_exists(settings.DATABASE_URL):
-        logger.info(f"Creating database: {settings.DATABASE_URL}")
-        create_database(settings.DATABASE_URL)
+    # For non-PostgreSQL databases (like SQLite), skip the database_exists check
+    if "sqlite" not in settings.DATABASE_URL.lower():
+        # Create database if it doesn't exist
+        if not database_exists(settings.DATABASE_URL):
+            logger.info(f"Creating database: {settings.DATABASE_URL}")
+            create_database(settings.DATABASE_URL)
     
-    # Create PostGIS extension
-    with engine.connect() as connection:
-        connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-        connection.commit()
-        logger.info("PostGIS extension enabled")
+    # Create PostGIS extension (PostgreSQL only)
+    if "postgresql" in settings.DATABASE_URL.lower():
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+                connection.commit()
+                logger.info("PostGIS extension enabled")
+        except Exception as e:
+            logger.warning(f"Failed to enable PostGIS extension: {str(e)}")
+    else:
+        logger.info("Skipping PostGIS extension (not PostgreSQL)")
     
     # Create all tables
     Base.metadata.create_all(bind=engine)

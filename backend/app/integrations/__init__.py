@@ -2,13 +2,11 @@
 from .satellite_providers import (
     SatelliteProvider,
     MockSatelliteProvider,
-    GoogleEarthEngineProvider,
-    SentinelHubProvider,
+    GoogleStaticMapsProvider,
 )
 
 __all__ = [
     "SatelliteProvider",
     "MockSatelliteProvider",
-    "GoogleEarthEngineProvider",
-    "SentinelHubProvider",
+    "GoogleStaticMapsProvider",
 ]

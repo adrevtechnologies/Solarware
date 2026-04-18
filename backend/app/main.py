@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core import get_settings, setup_database, logger
 from app.core.errors import SolarwareError
 from app.models import SearchArea, Prospect  # Import models to register with Base
-from app.api import search_areas, prospects, processing, health
+from app.api import search_areas, prospects, processing, health, search
 
 # Setup database
 try:
@@ -77,3 +77,4 @@ app.include_router(health.router)
 app.include_router(search_areas.router)
 app.include_router(prospects.router)
 app.include_router(processing.router)
+app.include_router(search.router)
