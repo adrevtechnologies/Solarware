@@ -4,7 +4,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "env": {
-    "VITE_API_URL": "@api_url"
+    "VITE_API_URL": "https://solarware-api.onrender.com"
   },
   "git": {
     "deploymentEnabled": true
