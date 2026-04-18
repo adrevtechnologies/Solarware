@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { MailPack, Prospect } from '../types';
 import { SearchPanel, SearchParams } from '../components/SearchPanel';
 import { ResultsTable } from '../components/ResultsTable';
@@ -20,6 +20,8 @@ export const Dashboard: React.FC = () => {
   const [results, setResults] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
+  const [warmingBackend, setWarmingBackend] = useState(false);
+  const [backendReady, setBackendReady] = useState(false);
 
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -46,11 +48,50 @@ export const Dashboard: React.FC = () => {
     };
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const ensureBackendReady = useCallback(async (): Promise<boolean> => {
+    if (backendReady) {
+      return true;
+    }
+
+    setWarmingBackend(true);
+    setSearchMessage('Waking backend service...');
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await api.healthCheck();
+        setBackendReady(true);
+        setWarmingBackend(false);
+        return true;
+      } catch (error) {
+        console.warn('[Solarware] backend:wakeup:attempt_failed', { attempt, error });
+        if (attempt < 3) {
+          await sleep(1500 * attempt);
+        }
+      }
+    }
+
+    setWarmingBackend(false);
+    return false;
+  }, [backendReady]);
+
+  useEffect(() => {
+    void ensureBackendReady();
+  }, [ensureBackendReady]);
+
   const handleSearch = async () => {
     setLoading(true);
     setSearchMessage('Searching...');
 
     try {
+      const ready = await ensureBackendReady();
+      if (!ready) {
+        setResults([]);
+        setSearchMessage('Backend is still waking up. Please click Search again in a few seconds.');
+        return;
+      }
+
       const streetParts = splitStreetInput(searchParams.street);
       const isExactMode = !!streetParts.street_name;
       const payload = {
@@ -74,7 +115,14 @@ export const Dashboard: React.FC = () => {
         province: payload.province,
       });
 
-      const response = await api.searchProspects(payload);
+      let response;
+      try {
+        response = await api.searchProspects(payload);
+      } catch (firstError) {
+        console.warn('[Solarware] search:first_attempt_failed_retrying', firstError);
+        await sleep(1200);
+        response = await api.searchProspects(payload);
+      }
       const exactCount = response.data.count ?? (response.data.results || []).length;
 
       console.info('[Solarware] search:done', {
@@ -98,7 +146,14 @@ export const Dashboard: React.FC = () => {
           province: areaFallbackPayload.province,
         });
 
-        const areaResponse = await api.searchProspects(areaFallbackPayload);
+        let areaResponse;
+        try {
+          areaResponse = await api.searchProspects(areaFallbackPayload);
+        } catch (firstAreaError) {
+          console.warn('[Solarware] search:fallback_first_attempt_failed_retrying', firstAreaError);
+          await sleep(1200);
+          areaResponse = await api.searchProspects(areaFallbackPayload);
+        }
         const areaCount = areaResponse.data.count ?? (areaResponse.data.results || []).length;
 
         console.info('[Solarware] search:fallback-area:done', {
@@ -211,7 +266,7 @@ export const Dashboard: React.FC = () => {
               params={searchParams}
               onParamsChange={setSearchParams}
               onSearch={handleSearch}
-              loading={loading}
+                loading={loading || warmingBackend}
             />
           </div>
 
