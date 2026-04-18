@@ -75,6 +75,8 @@ class BuildingPolygon(BaseModel):
     longitude: float
     address: Optional[str] = None
     suburb: Optional[str] = None
+    house_number: Optional[str] = None
+    street: Optional[str] = None
     website: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -272,6 +274,8 @@ def query_commercial_buildings(
                 longitude=avg_lon,
                 address=tags.get("addr:street"),
                 suburb=tags.get("addr:suburb"),
+                house_number=tags.get("addr:housenumber"),
+                street=tags.get("addr:street"),
                 website=tags.get("website") or tags.get("contact:website"),
                 phone=tags.get("phone") or tags.get("contact:phone"),
                 email=tags.get("email") or tags.get("contact:email"),

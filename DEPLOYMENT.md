@@ -1,6 +1,7 @@
 # Solarware Deployment Guide
 
 ## Prerequisites
+
 - GitHub repository: https://github.com/morgan9hips-sketch/Solarware
 - Render account: https://render.com/
 - Vercel account: https://vercel.com/
@@ -8,12 +9,14 @@
 ## Backend Deployment (Render)
 
 ### Step 1: Create Service on Render
+
 1. Go to https://dashboard.render.com/
 2. Click "New +" → "Web Service"
 3. Connect to GitHub repository `Solarware`
 4. Select branch: `main`
 
 ### Step 2: Configure Service
+
 - **Name:** solarware-backend
 - **Environment:** Python 3
 - **Build Command:** `pip install -r backend/requirements.txt`
@@ -21,9 +24,11 @@
 - **Instance Type:** Starter (free tier) or Standard
 
 ### Step 3: Add Environment Variables
+
 No special environment variables needed - the app uses defaults.
 
 ### Step 4: Deploy
+
 Click "Create Web Service" - Render will automatically build and deploy.
 
 **Backend URL:** `https://solarware-backend.onrender.com` (example - your URL will be different)
@@ -33,12 +38,14 @@ Click "Create Web Service" - Render will automatically build and deploy.
 ## Frontend Deployment (Vercel)
 
 ### Step 1: Create Project on Vercel
+
 1. Go to https://vercel.com/dashboard
 2. Click "Add New..." → "Project"
 3. Import GitHub repository `Solarware`
 4. Select `main` branch
 
 ### Step 2: Configure Build Settings
+
 - **Framework Preset:** Vite
 - **Root Directory:** `frontend`
 - **Build Command:** `npm run build`
@@ -46,16 +53,20 @@ Click "Create Web Service" - Render will automatically build and deploy.
 - **Install Command:** `npm install`
 
 ### Step 3: Add Environment Variables
+
 Create a `.env.production` file in `frontend/`:
+
 ```
 VITE_API_URL=https://solarware-backend.onrender.com
 ```
 
 Or set in Vercel dashboard:
+
 - **Name:** `VITE_API_URL`
 - **Value:** `https://solarware-backend.onrender.com` (replace with your actual backend URL)
 
 ### Step 4: Deploy
+
 Click "Deploy" - Vercel will build and deploy automatically.
 
 **Frontend URL:** `https://solarware.vercel.app` (example - your URL will be different)
@@ -65,6 +76,7 @@ Click "Deploy" - Vercel will build and deploy automatically.
 ## Testing the Live System
 
 ### Test 1: Goodwood Search
+
 1. Open your frontend URL in browser
 2. Select mode: "Address"
 3. Enter:
@@ -77,6 +89,7 @@ Click "Deploy" - Vercel will build and deploy automatically.
 5. **Expected:** Real building addresses appear with roof sizes, solar capacity, annual kWh, savings potential
 
 ### Test 2: Check API Directly
+
 ```bash
 curl -X POST https://your-backend-url/api/search \
   -H "Content-Type: application/json" \
@@ -90,7 +103,9 @@ curl -X POST https://your-backend-url/api/search \
     "radius_m": 500
   }'
 ```
+
 **Expected Response:**
+
 ```json
 {
   "results": [
@@ -116,12 +131,14 @@ curl -X POST https://your-backend-url/api/search \
 ```
 
 ### Test 3: Verify No Fake Data
+
 - ✓ No placeholder.com URLs
 - ✓ No "Building near -33.x, 18.x" fake addresses
 - ✓ Real OpenStreetMap building addresses
 - ✓ NO coordinates shown in UI (only in API response back-end)
 
 ### Test 4: Check Google Imagery
+
 - Click on any result to view satellite image
 - **Expected:** Real satellite photo from Google Static Maps showing the building roof
 
@@ -141,16 +158,19 @@ curl -X POST https://your-backend-url/api/search \
 ## Troubleshooting
 
 ### Backend won't start
+
 - Check Procfile: `web: python wsgi.py`
 - Check requirements.txt in backend/ directory
 - Render logs: See deployment logs in Render dashboard
 
 ### Frontend API calls failing
+
 - Check VITE_API_URL environment variable
 - Ensure backend is running (check Render dashboard)
 - Check browser console for CORS errors
 
 ### Slow responses
+
 - First query may take 20-30 seconds (Overpass API query time)
 - Subsequent searches are faster
 - This is normal for real-time OSM data

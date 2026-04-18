@@ -75,7 +75,8 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
                 />
               ) : (
                 <div className="flex min-h-[260px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
-                  Could not load this image in the modal. Use the map link below for the exact target location.
+                  Could not load this image in the modal. Use the map link below for the exact
+                  target location.
                 </div>
               )}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
