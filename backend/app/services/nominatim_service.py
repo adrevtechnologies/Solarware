@@ -79,6 +79,69 @@ def geocode_address(
         return None
 
 
+def geocode_address_polygon(
+    address: str,
+    city: str = "",
+    province: str = "",
+    suburb: str = "",
+    postcode: str = "",
+    country: str = "South Africa",
+) -> Optional[List[Tuple[float, float]]]:
+    """Resolve address to a polygon footprint/boundary when available from Nominatim."""
+    parts = [address, suburb, city, province, postcode, country or "South Africa"]
+    query = ", ".join([p.strip() for p in parts if p and p.strip()])
+
+    try:
+        response = requests.get(
+            f"{NOMINATIM_URL}/search",
+            params={
+                "q": query,
+                "format": "jsonv2",
+                "addressdetails": 1,
+                "polygon_geojson": 1,
+                "limit": 1,
+            },
+            headers=HEADERS,
+            timeout=8,
+        )
+        response.raise_for_status()
+
+        results = response.json()
+        if not results:
+            return None
+
+        geojson = results[0].get("geojson") or {}
+        geometry_type = geojson.get("type")
+        coords = geojson.get("coordinates")
+        if not geometry_type or not coords:
+            return None
+
+        ring = None
+        if geometry_type == "Polygon":
+            ring = coords[0] if coords else None
+        elif geometry_type == "MultiPolygon":
+            # Choose the longest outer ring as primary footprint.
+            rings = [poly[0] for poly in coords if poly and poly[0]]
+            if rings:
+                ring = sorted(rings, key=len, reverse=True)[0]
+
+        if not ring or len(ring) < 3:
+            return None
+
+        polygon = []
+        for point in ring:
+            if len(point) < 2:
+                continue
+            lon, lat = point[0], point[1]
+            polygon.append((float(lat), float(lon)))
+
+        return polygon if len(polygon) >= 3 else None
+
+    except Exception as e:
+        logger.warning(f"Nominatim polygon lookup failed for '{query}': {e}")
+        return None
+
+
 def reverse_geocode(latitude: float, longitude: float) -> Optional[Dict]:
     """
     Convert coordinates to address using Nominatim

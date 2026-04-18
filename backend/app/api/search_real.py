@@ -12,10 +12,13 @@ from pydantic import BaseModel
 from typing import Optional, List, Tuple
 from ..services.nominatim_service import (
     geocode_address,
+    geocode_address_polygon,
     reverse_geocode,
     get_bounding_box,
 )
 from ..services.overpass_service import (
+    BuildingPolygon,
+    calculate_polygon_area,
     query_commercial_buildings,
     filter_nearby_buildings,
 )
@@ -363,6 +366,27 @@ async def search_real_prospects(
 
         if is_exact_address:
             target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
+            if not target_building:
+                polygon = geocode_address_polygon(
+                    query_str or "",
+                    city=request.city,
+                    province=request.province,
+                    suburb=request.suburb,
+                    postcode=request.postcode or "",
+                    country=request.country,
+                )
+                if polygon:
+                    roof_area_sqm = max(20.0, calculate_polygon_area(polygon))
+                    target_building = BuildingPolygon(
+                        osm_id=f"nominatim-{hashlib.sha1((query_str or '').encode('utf-8')).hexdigest()[:12]}",
+                        name=None,
+                        building_type="residential",
+                        latitude=sum(p[0] for p in polygon) / len(polygon),
+                        longitude=sum(p[1] for p in polygon) / len(polygon),
+                        roof_area_sqm=roof_area_sqm,
+                        nodes=polygon,
+                    )
+
             if not target_building:
                 nearest_building, nearest_distance_m = _nearest_building_with_distance(
                     buildings,
