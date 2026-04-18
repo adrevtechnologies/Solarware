@@ -1,8 +1,11 @@
 """Visualization generation."""
-from typing import Dict, Optional
-from PIL import Image, ImageDraw, ImageFont
+from pathlib import Path
+from typing import Optional, Tuple
+from PIL import Image, ImageDraw
 import io
+import math
 import random
+import requests
 from ..core.logging import logger
 from ..core.errors import VisualizationError
 from ..utils import ensure_output_dir, save_file
@@ -15,7 +18,7 @@ class VizGenerator:
     async def generate_mockup(
         satellite_image_path: Optional[str],
         panel_count: int,
-        roof_area_sqft: float,
+        roof_area_sqm: float,
         system_capacity_kw: float,
         output_path: Optional[str] = None,
     ) -> str:
@@ -37,11 +40,12 @@ class VizGenerator:
         try:
             logger.info(f"Generating mockup for {panel_count} panels")
             
-            # Create mock visualization
-            img = VizGenerator._create_mock_mockup(
-                panel_count,
-                roof_area_sqft,
-                system_capacity_kw
+            # Create geometric overlay visualization from the real satellite image.
+            img = VizGenerator._create_panel_overlay(
+                satellite_image_path=satellite_image_path,
+                panel_count=panel_count,
+                roof_area_sqm=roof_area_sqm,
+                system_capacity_kw=system_capacity_kw,
             )
             
             # Save image
@@ -62,58 +66,99 @@ class VizGenerator:
             raise VisualizationError(f"Failed to generate mockup: {str(e)}")
 
     @staticmethod
-    def _create_mock_mockup(
+    def _load_satellite_image(image_ref: Optional[str]) -> Image.Image:
+        if not image_ref:
+            raise VisualizationError("Missing satellite image")
+
+        if image_ref.startswith("http://") or image_ref.startswith("https://"):
+            response = requests.get(image_ref, timeout=20)
+            response.raise_for_status()
+            return Image.open(io.BytesIO(response.content)).convert("RGB")
+
+        path = Path(image_ref)
+        if not path.exists():
+            raise VisualizationError(f"Satellite image path not found: {image_ref}")
+        return Image.open(path).convert("RGB")
+
+    @staticmethod
+    def _panel_grid_points(
+        center: Tuple[float, float],
+        width: float,
+        height: float,
+        panel_w: float,
+        panel_h: float,
+        spacing: float,
+    ) -> list[Tuple[float, float, float, float]]:
+        cx, cy = center
+        rows = max(1, int(height // (panel_h + spacing)))
+        cols = max(1, int(width // (panel_w + spacing)))
+        start_x = cx - (cols * (panel_w + spacing) - spacing) / 2
+        start_y = cy - (rows * (panel_h + spacing) - spacing) / 2
+
+        panels = []
+        for r in range(rows):
+            for c in range(cols):
+                x0 = start_x + c * (panel_w + spacing)
+                y0 = start_y + r * (panel_h + spacing)
+                x1 = x0 + panel_w
+                y1 = y0 + panel_h
+                panels.append((x0, y0, x1, y1))
+        return panels
+
+    @staticmethod
+    def _create_panel_overlay(
+        satellite_image_path: Optional[str],
         panel_count: int,
-        roof_area_sqft: float,
+        roof_area_sqm: float,
         system_capacity_kw: float
     ) -> Image.Image:
-        """Create a mock mockup image."""
-        # Create image with blue gradient background (simulating satellite)
-        img = Image.new("RGB", (800, 600), color=(100, 150, 200))
+        """Create a geometric solar panel overlay on a real satellite image."""
+        img = VizGenerator._load_satellite_image(satellite_image_path).resize((800, 600))
         draw = ImageDraw.Draw(img)
-        
-        # Draw some building outline
-        draw.rectangle([100, 200, 700, 450], outline="white", width=3)
-        
-        # Draw grid of solar panels
-        panel_width = 40
-        panel_height = 35
-        start_x = 150
-        start_y = 250
-        
-        panels_per_row = max(1, int((700 - 150) / (panel_width + 5)))
-        rows = max(1, int(panel_count / panels_per_row) + 1)
-        
-        for i in range(min(panel_count, panels_per_row * rows)):
-            row = i // panels_per_row
-            col = i % panels_per_row
-            x = start_x + col * (panel_width + 5)
-            y = start_y + row * (panel_height + 5)
-            
-            if x + panel_width < 700 and y + panel_height < 500:
-                draw.rectangle(
-                    [x, y, x + panel_width, y + panel_height],
-                    fill=(50, 100, 150),
-                    outline=(100, 200, 255),
-                    width=1
-                )
-        
-        # Add text
-        try:
-            font = ImageFont.load_default()
-        except:
-            font = None
-        
-        text_lines = [
-            f"Solar Proposal",
-            f"Panels: {panel_count} | Capacity: {system_capacity_kw:.1f} kW",
-            f"Roof Area: {roof_area_sqft:,.0f} sq ft",
-        ]
-        
-        for i, text in enumerate(text_lines):
-            y_pos = 50 + i * 30
-            draw.text((20, y_pos), text, fill="white", font=font)
-        
+
+        # Approximate a roof envelope in image space and rotate panel rows.
+        roof_center = (400.0, 310.0)
+        roof_width = 520.0
+        roof_height = 280.0
+        roof_angle = -12
+
+        panel_w = 24.0
+        panel_h = 14.0
+        spacing = 4.0
+
+        base_panels = VizGenerator._panel_grid_points(
+            center=roof_center,
+            width=roof_width,
+            height=roof_height,
+            panel_w=panel_w,
+            panel_h=panel_h,
+            spacing=spacing,
+        )
+
+        rotation_radians = math.radians(roof_angle)
+        cos_a = math.cos(rotation_radians)
+        sin_a = math.sin(rotation_radians)
+
+        cx, cy = roof_center
+        placed = 0
+        for x0, y0, x1, y1 in base_panels:
+            if placed >= max(0, panel_count):
+                break
+
+            pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+            rotated = []
+            for x, y in pts:
+                rx = cx + (x - cx) * cos_a - (y - cy) * sin_a
+                ry = cy + (x - cx) * sin_a + (y - cy) * cos_a
+                rotated.append((rx, ry))
+
+            draw.polygon(rotated, fill=(15, 48, 87, 220), outline=(90, 170, 255, 255))
+            placed += 1
+
+        legend = f"Panels: {placed} | Capacity: {system_capacity_kw:.1f} kW | Roof: {roof_area_sqm:.0f} sqm"
+        draw.rectangle((12, 12, 620, 44), fill=(0, 0, 0, 160))
+        draw.text((20, 20), legend, fill=(255, 255, 255))
+
         return img
 
     @staticmethod
@@ -135,8 +180,21 @@ class VizGenerator:
         try:
             logger.info("Generating before/after comparison")
             
-            # Create side-by-side comparison
-            img = VizGenerator._create_before_after_image()
+            if not before_image_path or not mockup_image_path:
+                raise VisualizationError("Before/after generation requires both before and after images")
+
+            before = VizGenerator._load_satellite_image(before_image_path).resize((800, 600))
+            after = VizGenerator._load_satellite_image(mockup_image_path).resize((800, 600))
+
+            img = Image.new("RGB", (1600, 600), color="white")
+            img.paste(before, (0, 0))
+            img.paste(after, (800, 0))
+
+            draw = ImageDraw.Draw(img)
+            draw.rectangle((0, 0, 800, 42), fill=(0, 0, 0, 170))
+            draw.rectangle((800, 0, 1600, 42), fill=(0, 0, 0, 170))
+            draw.text((16, 12), "Before", fill=(255, 255, 255))
+            draw.text((816, 12), "After (Panel Overlay)", fill=(255, 255, 255))
             
             # Save
             output_dir = ensure_output_dir("visualizations")
@@ -155,23 +213,3 @@ class VizGenerator:
             logger.error(f"Before/after generation failed: {str(e)}")
             raise VisualizationError(f"Failed to generate comparison: {str(e)}")
 
-    @staticmethod
-    def _create_before_after_image() -> Image.Image:
-        """Create before/after comparison image."""
-        # Create wide image with two sections
-        img = Image.new("RGB", (1600, 600), color="white")
-        draw = ImageDraw.Draw(img)
-        
-        # Left side - before
-        draw.rectangle([0, 0, 800, 600], fill=(100, 150, 200))
-        try:
-            font = ImageFont.load_default()
-        except:
-            font = None
-        draw.text((600, 300), "BEFORE", fill="white", font=font)
-        
-        # Right side - after
-        draw.rectangle([800, 0, 1600, 600], fill=(100, 200, 100))
-        draw.text((1350, 300), "AFTER", fill="white", font=font)
-        
-        return img

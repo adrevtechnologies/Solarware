@@ -68,10 +68,14 @@ class EmailService:
             raise EmailError("SMTP credentials not configured")
         
         try:
-            # Read email content
-            email_path = Path(mailing_pack.get("email_path"))
-            with open(email_path, "r") as f:
-                email_content = f.read()
+            email_content = mailing_pack.get("email_body")
+            if not email_content:
+                email_path_value = mailing_pack.get("email_path")
+                if not email_path_value:
+                    raise EmailError("No email content supplied")
+                email_path = Path(email_path_value)
+                with open(email_path, "r") as f:
+                    email_content = f.read()
             
             # Create message
             msg = MIMEMultipart("related")

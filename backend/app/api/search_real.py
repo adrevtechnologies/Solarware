@@ -3,13 +3,12 @@ REAL Search Engine - No fake data, no placeholders
 Uses live APIs: Nominatim + Overpass + Solar calculations
 """
 import logging
-from fastapi import APIRouter, HTTPException, Depends, Query
+import json
+import hashlib
+from pathlib import Path
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-import asyncio
-from sqlalchemy.orm import Session
-
-from ..core.database import get_db
 from ..services.nominatim_service import (
     geocode_address,
     reverse_geocode,
@@ -21,6 +20,10 @@ from ..services.overpass_service import (
 )
 from ..services.solar_calculations import get_solar_stats
 from ..services.satellite_service import get_satellite_image_url
+from ..analysis.visualization import VizGenerator
+from ..analysis.mailing_pack import MailingPackGenerator
+from ..services.email_service import EmailService
+from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +31,7 @@ router = APIRouter(prefix="/api", tags=["search"])
 
 
 class SearchRequest(BaseModel):
-    """Real search request - no fake modes"""
-    mode: str  # address | area | city | province | country
+    """V1 search request: area search with optional exact street address."""
     
     # Address mode
     street_number: Optional[str] = None
@@ -37,14 +39,16 @@ class SearchRequest(BaseModel):
     suburb: Optional[str] = None
     city: Optional[str] = None
     province: Optional[str] = None
+    country: Optional[str] = "South Africa"
     postcode: Optional[str] = None
     radius_m: int = 500  # 250, 500, 1000
     
     # Building type filters
     building_types: Optional[List[str]] = None  # warehouse, retail, office, school, etc
+    include_residential: bool = False
     
     # Roof filters
-    min_roof_sqm: Optional[int] = 150
+    min_roof_sqm: Optional[int] = None
 
 
 class SolarProspect(BaseModel):
@@ -55,7 +59,12 @@ class SolarProspect(BaseModel):
     city: Optional[str]
     business_name: Optional[str]
     building_type: str
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    contact_person: Optional[str] = None
     roof_area_sqm: float
+    estimated_panel_count: int
     capacity_low_kw: float
     capacity_high_kw: float
     annual_kwh: float
@@ -75,18 +84,94 @@ class SearchResponse(BaseModel):
     message: str
 
 
+class MailPackRequest(BaseModel):
+    prospect: SolarProspect
+
+
+class MailPackResponse(BaseModel):
+    id: str
+    before_image_url: str
+    after_image_url: str
+    before_after_image_url: str
+    pdf_url: str
+    email_subject: str
+    email_body: str
+    outreach_email: str
+
+
+class MailPackSendRequest(BaseModel):
+    mailing_pack: dict
+    recipient_email: str
+
+
+def _to_public_output_url(file_path: str | None) -> str | None:
+    if not file_path:
+        return None
+
+    normalized = file_path.replace("\\", "/")
+    if normalized.startswith("output/"):
+        return f"/{normalized}"
+
+    output_root = Path(get_settings().OUTPUT_BASE_PATH).resolve().as_posix()
+    if normalized.startswith(output_root):
+        rel = normalized[len(output_root):].lstrip("/")
+        return f"/output/{rel}"
+
+    marker = "/output/"
+    idx = normalized.find(marker)
+    if idx >= 0:
+        return normalized[idx:]
+    return None
+
+
+def _cache_file_for_request(request: SearchRequest) -> Path:
+    cache_root = Path(get_settings().OUTPUT_BASE_PATH).resolve() / "cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+
+    key_data = {
+        "country": request.country,
+        "province": request.province,
+        "city": request.city,
+        "suburb": request.suburb,
+        "street_number": request.street_number,
+        "street_name": request.street_name,
+        "postcode": request.postcode,
+        "min_roof_sqm": request.min_roof_sqm,
+        "include_residential": request.include_residential,
+    }
+    key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode("utf-8")).hexdigest()[:20]
+    return cache_root / f"search_{key}.json"
+
+
+def _load_cached_results(request: SearchRequest) -> Optional[SearchResponse]:
+    cache_file = _cache_file_for_request(request)
+    if not cache_file.exists():
+        return None
+    try:
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        return SearchResponse(**payload)
+    except Exception:
+        return None
+
+
+def _save_cached_results(request: SearchRequest, response: SearchResponse) -> None:
+    cache_file = _cache_file_for_request(request)
+    cache_file.write_text(response.model_dump_json(indent=2), encoding="utf-8")
+
+
 @router.post("/search")
 async def search_real_prospects(
     request: SearchRequest,
-    db: Session = Depends(get_db)
 ) -> SearchResponse:
     """
     REAL SEARCH ENGINE
     
-    Priority: Address > Area > City > Province > Country
+    V1 behavior:
+    - If street address provided: exact address search only
+    - If street address empty: area search within selected city/province/country
     
     1. Geocode location using Nominatim
-    2. Query Overpass API for commercial buildings only
+    2. Query Overpass API for buildings (commercial by default)
     3. Calculate solar stats for each building
     4. Return REAL prospects with real addresses
     
@@ -95,102 +180,93 @@ async def search_real_prospects(
     """
     
     try:
-        # STEP 1: GEOCODE INPUT
-        logger.info(f"Search request: mode={request.mode}")
-        
-        if request.mode == "address" and request.street_name:
-            # Geocode specific address
+        # STEP 1: Validate required context fields for V1.
+        if not request.country or not request.province or not request.city or not request.suburb:
+            return SearchResponse(
+                results=[],
+                count=0,
+                search_area="",
+                message="Country, province/state, city, and area/suburb are required.",
+            )
+
+        is_exact_address = bool(request.street_name and request.street_name.strip())
+        logger.info("Search request: exact_address=%s", is_exact_address)
+
+        if is_exact_address:
             query_str = f"{request.street_number or ''} {request.street_name}".strip()
             geo = geocode_address(
                 query_str,
-                city=request.city or "",
-                province=request.province or ""
+                city=request.city,
+                province=request.province,
+                suburb=request.suburb,
+                postcode=request.postcode or "",
+                country=request.country,
             )
             if not geo:
                 return SearchResponse(
                     results=[],
                     count=0,
                     search_area=query_str,
-                    message="Address not found. Try another address or a broader search."
+                    message="Address not found. Check street spelling and try again.",
                 )
-            
+
             center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = request.radius_m / 1000.0
+            radius_km = max(0.15, request.radius_m / 1000.0)
             search_area = geo.address
-            
-        elif request.mode == "area" and request.suburb:
-            # Geocode suburb/area
+        else:
             geo = geocode_address(
                 request.suburb,
-                city=request.city or "",
-                province=request.province or ""
+                city=request.city,
+                province=request.province,
+                postcode=request.postcode or "",
+                country=request.country,
             )
             if not geo:
                 return SearchResponse(
                     results=[],
                     count=0,
                     search_area=request.suburb,
-                    message="Area not found. Check spelling and try again."
+                    message="Area not found. Check spelling and try again.",
                 )
-            
+
             center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = request.radius_m / 1000.0
-            search_area = geo.address
-            
-        elif request.mode == "city" and request.city:
-            # Geocode city
-            geo = geocode_address(
-                request.city,
-                province=request.province or ""
-            )
-            if not geo:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=request.city,
-                    message="City not found."
-                )
-            
-            center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = 5.0  # Larger search for city
-            search_area = f"{request.city}, {request.province or 'South Africa'}"
-            
-        elif request.mode == "province" and request.province:
-            # Geocode province (search all)
-            geo = geocode_address(request.province, "", "")
-            if not geo:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=request.province,
-                    message="Province not found."
-                )
-            
-            center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = 20.0  # Huge search for province
-            search_area = request.province
-            
-        else:
-            return SearchResponse(
-                results=[],
-                count=0,
-                search_area="",
-                message="Invalid search parameters. Provide address, area, city, or province."
-            )
+            radius_km = max(0.5, request.radius_m / 1000.0)
+            search_area = f"{request.suburb}, {request.city}, {request.province}"
 
         # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
-        logger.info(f"Querying Overpass API for commercial buildings near {search_area}")
+        include_residential = bool(request.include_residential)
+
+        logger.info(
+            "Querying Overpass API for %s buildings near %s",
+            "commercial + residential" if include_residential else "commercial",
+            search_area,
+        )
         
         min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, radius_km)
         
-        buildings = query_commercial_buildings(min_lat, max_lat, min_lon, max_lon)
+        buildings = query_commercial_buildings(
+            min_lat,
+            max_lat,
+            min_lon,
+            max_lon,
+            include_residential=include_residential,
+        )
         
         if not buildings:
+            cached = _load_cached_results(request)
+            if cached:
+                return SearchResponse(
+                    results=cached.results,
+                    count=cached.count,
+                    search_area=cached.search_area,
+                    message=f"Live map source timed out. Showing last successful results for {cached.search_area}.",
+                )
+
             return SearchResponse(
                 results=[],
                 count=0,
                 search_area=search_area,
-                message="No suitable commercial prospects found in this area. Try increasing radius or changing location."
+                message="No suitable properties found in this area. Try increasing radius or changing location."
             )
 
         # Filter by radius and building type
@@ -199,8 +275,12 @@ async def search_real_prospects(
         if request.building_types:
             buildings = [b for b in buildings if b.building_type in request.building_types]
 
-        if request.min_roof_sqm:
-            buildings = [b for b in buildings if b.roof_area_sqm >= request.min_roof_sqm]
+        effective_min_roof_sqm = (
+            request.min_roof_sqm
+            if request.min_roof_sqm is not None
+            else (60 if include_residential else 150)
+        )
+        buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
 
         if not buildings:
             return SearchResponse(
@@ -245,7 +325,12 @@ async def search_real_prospects(
                     city=geo_result.get("city") if geo_result else None,
                     business_name=building.name,
                     building_type=building.building_type,
+                    website=building.website,
+                    phone=building.phone,
+                    email=building.email,
+                    contact_person=building.contact_person,
                     roof_area_sqm=solar["roof_area_sqm"],
+                    estimated_panel_count=solar["estimated_panel_count"],
                     capacity_low_kw=solar["capacity_low_kw"],
                     capacity_high_kw=solar["capacity_high_kw"],
                     annual_kwh=solar["annual_kwh_mid"],
@@ -266,13 +351,91 @@ async def search_real_prospects(
 
         logger.info(f"Search completed: {len(results)} prospects found in {search_area}")
         
-        return SearchResponse(
+        response = SearchResponse(
             results=results,
             count=len(results),
             search_area=search_area,
-            message=f"Found {len(results)} commercial buildings with solar potential in {search_area}"
+            message=f"Found {len(results)} properties with solar potential in {search_area}"
         )
+        _save_cached_results(request, response)
+        return response
 
     except Exception as e:
         logger.error(f"Search error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@router.post("/search/mail-pack", response_model=MailPackResponse)
+async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
+    """Generate heavy mail pack assets on demand for one selected result."""
+    try:
+        prospect = request.prospect
+
+        mockup_path = await VizGenerator.generate_mockup(
+            satellite_image_path=prospect.satellite_image_url,
+            panel_count=prospect.estimated_panel_count,
+            roof_area_sqm=prospect.roof_area_sqm,
+            system_capacity_kw=prospect.capacity_high_kw,
+        )
+
+        before_after_path = await VizGenerator.generate_before_after(
+            before_image_path=prospect.satellite_image_url,
+            mockup_image_path=mockup_path,
+        )
+
+        pack = MailingPackGenerator.generate(
+            prospect={
+                "id": prospect.osm_id,
+                "address": prospect.address,
+                "business_name": prospect.business_name,
+                "business_type": prospect.building_type,
+                "website": prospect.website,
+                "phone": prospect.phone,
+                "email": prospect.email,
+                "contact_name": prospect.contact_person,
+                "roof_area_sqm": prospect.roof_area_sqm,
+                "estimated_panel_count": prospect.estimated_panel_count,
+                "estimated_system_capacity_kw": prospect.capacity_high_kw,
+                "estimated_annual_production_kwh": prospect.annual_kwh,
+                "savings_low": prospect.savings_low,
+                "savings_high": prospect.savings_high,
+                "solar_score": prospect.solar_score,
+            },
+            contact={
+                "contact_name": prospect.contact_person,
+                "email": prospect.email,
+                "phone": prospect.phone,
+            },
+            satellite_image_path=prospect.satellite_image_url,
+            mockup_image_path=mockup_path,
+            before_after_image_path=before_after_path,
+        )
+
+        return MailPackResponse(
+            id=pack["id"],
+            before_image_url=prospect.satellite_image_url,
+            after_image_url=_to_public_output_url(mockup_path) or "",
+            before_after_image_url=_to_public_output_url(before_after_path) or "",
+            pdf_url=_to_public_output_url(pack.get("pdf_path")) or "",
+            email_subject=pack["email_subject"],
+            email_body=pack["email_body"],
+            outreach_email=pack["outreach"]["cold_email"],
+        )
+    except Exception as e:
+        logger.error("Mail pack generation failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Mail pack generation failed: {e}")
+
+
+@router.post("/search/mail-pack/send")
+async def send_mail_pack_email(request: MailPackSendRequest):
+    """Send outreach email using SMTP when configured."""
+    try:
+        result = await EmailService.send_pack_email(
+            mailing_pack=request.mailing_pack,
+            recipient_email=request.recipient_email,
+            dry_run=False,
+            via="smtp",
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email send failed: {e}")

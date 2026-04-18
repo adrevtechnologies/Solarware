@@ -1,17 +1,17 @@
 import React from 'react';
-import { SearchMode } from './SearchModeSelector';
+import { CITIES_BY_PROVINCE, COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
 
 export interface SearchParams {
-  country?: string;
-  province?: string;
-  city?: string;
-  area?: string;
+  country: string;
+  province: string;
+  city: string;
+  area: string;
   street?: string;
   postalCode?: string;
+  minRoofSqm?: number;
 }
 
 interface SearchPanelProps {
-  mode: SearchMode;
   params: SearchParams;
   onParamsChange: (params: SearchParams) => void;
   onSearch: () => void;
@@ -19,110 +19,156 @@ interface SearchPanelProps {
 }
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
-  mode,
   params,
   onParamsChange,
   onSearch,
   loading,
 }) => {
+  const provinceOptions = PROVINCES_BY_COUNTRY[params.country] || [];
+  const cityOptions = CITIES_BY_PROVINCE[params.province] || [];
+
   const updateParam = (key: keyof SearchParams, value: string) => {
     onParamsChange({ ...params, [key]: value });
   };
 
+  const updateNumber = (key: keyof SearchParams, value: string) => {
+    const parsed = Number(value);
+    onParamsChange({
+      ...params,
+      [key]: Number.isNaN(parsed) ? undefined : parsed,
+    });
+  };
+
+  const canSearch =
+    !!params.country.trim() &&
+    !!params.province.trim() &&
+    !!params.city.trim() &&
+    !!params.area.trim();
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
-      {/* Country - always shown except in country mode */}
-      {mode !== 'country' && (
+    <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-100">Target Search</h2>
+        <p className="text-sm text-slate-400 mt-1">
+          Street address is optional. When provided, Solarware performs exact address search only.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Country</label>
+        <select
+          title="Country"
+          value={params.country}
+          onChange={(e) => {
+            const country = e.target.value;
+            const firstProvince = (PROVINCES_BY_COUNTRY[country] || [])[0] || '';
+            const firstCity = (CITIES_BY_PROVINCE[firstProvince] || [])[0] || '';
+            onParamsChange({ ...params, country, province: firstProvince, city: firstCity });
+          }}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+        >
+          {COUNTRIES.map((country) => (
+            <option key={country} value={country}>
+              {country}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Province / State</label>
+        <select
+          title="Province or state"
+          value={params.province}
+          onChange={(e) => {
+            const province = e.target.value;
+            const firstCity = (CITIES_BY_PROVINCE[province] || [])[0] || '';
+            onParamsChange({ ...params, province, city: firstCity });
+          }}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+        >
+          {provinceOptions.map((province) => (
+            <option key={province} value={province}>
+              {province}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">City</label>
+        <select
+          title="City"
+          value={params.city}
+          onChange={(e) => updateParam('city', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+        >
+          {cityOptions.map((city) => (
+            <option key={city} value={city}>
+              {city}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Area / Suburb</label>
+        <input
+          type="text"
+          placeholder="Goodwood"
+          value={params.area}
+          onChange={(e) => updateParam('area', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">
+          Street Address (optional)
+        </label>
+        <input
+          type="text"
+          placeholder="98 Richmond Street"
+          value={params.street || ''}
+          onChange={(e) => updateParam('street', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Country</label>
+          <label className="block text-sm font-semibold text-slate-200 mb-2">Postal Code</label>
           <input
             type="text"
-            placeholder="South Africa"
-            value={params.country || ''}
-            onChange={(e) => updateParam('country', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            placeholder="7460"
+            value={params.postalCode || ''}
+            onChange={(e) => updateParam('postalCode', e.target.value)}
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           />
         </div>
-      )}
 
-      {/* Province - shown for province, city, area, address modes */}
-      {(mode === 'province' || mode === 'city' || mode === 'area' || mode === 'address') && (
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Province</label>
+          <label className="block text-sm font-semibold text-slate-200 mb-2">
+            Minimum Roof (sqm)
+          </label>
           <input
-            type="text"
-            placeholder="Western Cape"
-            value={params.province || ''}
-            onChange={(e) => updateParam('province', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            type="number"
+            min={50}
+            step={10}
+            placeholder="150"
+            value={params.minRoofSqm || ''}
+            onChange={(e) => updateNumber('minRoofSqm', e.target.value)}
+            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           />
         </div>
-      )}
+      </div>
 
-      {/* City - shown for city, area, address modes */}
-      {(mode === 'city' || mode === 'area' || mode === 'address') && (
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
-          <input
-            type="text"
-            placeholder="Cape Town"
-            value={params.city || ''}
-            onChange={(e) => updateParam('city', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-        </div>
-      )}
-
-      {/* Area/Suburb - shown for area and address modes */}
-      {(mode === 'area' || mode === 'address') && (
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Area / Suburb</label>
-          <input
-            type="text"
-            placeholder="Goodwood"
-            value={params.area || ''}
-            onChange={(e) => updateParam('area', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-        </div>
-      )}
-
-      {/* Address fields - shown only for address mode */}
-      {mode === 'address' && (
-        <>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Street Number + Name
-            </label>
-            <input
-              type="text"
-              placeholder="98 Richmond Street"
-              value={params.street || ''}
-              onChange={(e) => updateParam('street', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Postal Code</label>
-            <input
-              type="text"
-              placeholder="7460"
-              value={params.postalCode || ''}
-              onChange={(e) => updateParam('postalCode', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-        </>
-      )}
-
-      {/* Search Button */}
       <button
         onClick={onSearch}
-        disabled={loading}
-        className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white font-bold py-3 rounded-lg hover:from-green-700 hover:to-green-800 disabled:opacity-50 transition mt-6"
+        disabled={loading || !canSearch}
+        className="mt-2 w-full rounded-xl bg-emerald-500 py-3 text-sm font-bold uppercase tracking-wide text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ? '🔍 Searching properties...' : '🚀 Find Solar Leads'}
+        {loading ? 'Searching...' : 'Search'}
       </button>
     </div>
   );

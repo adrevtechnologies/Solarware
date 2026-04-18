@@ -44,6 +44,10 @@ ROOF_USABLE_FACTORS = {
     "unknown": 0.60,
 }
 
+# Practical panel layout assumptions.
+PANEL_FOOTPRINT_SQM = 2.2  # panel + access/spacing footprint
+PANEL_PACKING_RATIO = 0.80
+
 
 def get_regional_yield(province: str = None) -> int:
     """Get annual solar yield (kWh/kW) for province"""
@@ -177,7 +181,19 @@ def get_solar_stats(
     
     RETURNS complete solar opportunity data
     """
+    usable_roof_sqm = roof_area_sqm * get_roof_usable_factor(building_type)
+    panel_count = max(0, int((usable_roof_sqm * PANEL_PACKING_RATIO) / PANEL_FOOTPRINT_SQM))
+
     capacity_low, capacity_high = calculate_solar_capacity(roof_area_sqm, building_type)
+
+    # Keep panel count and capacity physically consistent.
+    panel_capacity_kw = (panel_count * 0.4)
+    if panel_capacity_kw > 0:
+        capacity_low = min(capacity_low, panel_capacity_kw)
+        capacity_high = min(capacity_high, panel_capacity_kw)
+        if capacity_high < capacity_low:
+            capacity_high = capacity_low
+
     capacity_mid = (capacity_low + capacity_high) / 2
 
     annual_kwh_low = calculate_annual_generation(capacity_low, province)
@@ -189,7 +205,8 @@ def get_solar_stats(
 
     return {
         "roof_area_sqm": round(roof_area_sqm, 1),
-        "usable_roof_sqm": round(roof_area_sqm * get_roof_usable_factor(building_type), 1),
+        "usable_roof_sqm": round(usable_roof_sqm, 1),
+        "estimated_panel_count": panel_count,
         "capacity_low_kw": round(capacity_low, 1),
         "capacity_high_kw": round(capacity_high, 1),
         "capacity_mid_kw": round(capacity_mid, 1),

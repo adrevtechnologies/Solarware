@@ -75,6 +75,10 @@ class BuildingPolygon(BaseModel):
     longitude: float
     address: Optional[str] = None
     suburb: Optional[str] = None
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    contact_person: Optional[str] = None
     roof_area_sqm: float
     nodes: List[Tuple[float, float]]  # Polygon coordinates
 
@@ -109,27 +113,41 @@ def calculate_polygon_area(nodes: List[Tuple[float, float]]) -> float:
 
 
 def query_commercial_buildings(
-    min_lat: float, max_lat: float, min_lon: float, max_lon: float
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    include_residential: bool = False,
 ) -> List[BuildingPolygon]:
     """
-    Query Overpass API for commercial buildings ONLY
+    Query Overpass API for buildings, defaulting to commercial-only.
     
     Fetches buildings tagged as:
     - warehouse, retail, factory, office, school, church, hospital, farm
     
-    IGNORES: residential, house, shed, garage, hut
+    By default ignores: residential, house, shed, garage, hut
     
     RETURNS: List of real buildings with coordinates and footprints
     """
     bbox_str = f"{min_lat},{min_lon},{max_lat},{max_lon}"
     
-    # Overpass QL query for commercial buildings
+    residential_clause = ""
+    if include_residential:
+        residential_clause = """
+        way[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+        relation[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+        """
+
+    # Overpass QL query for commercial buildings (and optional residential)
     query = f"""
     [bbox:{bbox_str}];
     (
-        way["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial"];
-        way["building:use"~"commercial|industrial|retail|office|warehouse"];
-        relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial"];
+        way["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+        way["building:use"~"commercial|industrial|retail|office|warehouse|mall|business_park"];
+        way["office"];
+        way["landuse"~"industrial|commercial"];
+        relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+        {residential_clause}
     );
     out geom;
     """
@@ -140,6 +158,7 @@ def query_commercial_buildings(
             return []
 
         buildings = []
+        seen_ids = set()
         
         # Parse XML response
         try:
@@ -151,6 +170,9 @@ def query_commercial_buildings(
         # Extract ways (building polygons)
         for way in root.findall(".//way"):
             osm_id = way.get("id")
+            if not osm_id or osm_id in seen_ids:
+                continue
+            seen_ids.add(osm_id)
             
             # Get tags
             tags = {}
@@ -168,6 +190,8 @@ def query_commercial_buildings(
                 category = "retail"
             elif building_type in ["office"]:
                 category = "office"
+            elif building_type in ["commercial", "mall"]:
+                category = "business_park"
             elif building_type == "school":
                 category = "school"
             elif building_type == "church":
@@ -179,8 +203,15 @@ def query_commercial_buildings(
             else:
                 category = building_type
 
-            # REJECT residential, house, shed, garage, hut
-            if category in ["residential", "house", "hut", "garage", "shed", ""]:
+            if building_type in ["house", "residential", "detached", "semidetached_house", "terrace", "apartments"]:
+                category = "residential"
+
+            # For commercial mode, reject residential and small utility structures.
+            if not include_residential and category in ["residential", "house", "hut", "garage", "shed", ""]:
+                continue
+
+            # Even residential mode should still skip utility/non-target structures.
+            if include_residential and category in ["hut", "garage", "shed", ""]:
                 continue
 
             # Extract polygon nodes
@@ -229,6 +260,10 @@ def query_commercial_buildings(
                 longitude=avg_lon,
                 address=tags.get("addr:street"),
                 suburb=tags.get("addr:suburb"),
+                website=tags.get("website") or tags.get("contact:website"),
+                phone=tags.get("phone") or tags.get("contact:phone"),
+                email=tags.get("email") or tags.get("contact:email"),
+                contact_person=tags.get("contact:name"),
                 roof_area_sqm=roof_area_sqm,
                 nodes=nodes
             )
@@ -236,7 +271,8 @@ def query_commercial_buildings(
             buildings.append(building)
             logger.debug(f"Found building: {building.name or category} ({roof_area_sqm:.0f} sqm)")
 
-        logger.info(f"Overpass query found {len(buildings)} commercial buildings")
+        mode_label = "commercial + residential" if include_residential else "commercial"
+        logger.info(f"Overpass query found {len(buildings)} {mode_label} buildings")
         return buildings
 
     except Exception as e:

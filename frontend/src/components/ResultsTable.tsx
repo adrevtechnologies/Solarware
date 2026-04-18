@@ -5,127 +5,106 @@ interface ResultsTableProps {
   prospects: Prospect[];
   loading: boolean;
   noResultsMessage?: string;
-  onSelectProspect?: (prospect: Prospect) => void;
+  generatingPackId?: string | null;
+  onViewImage?: (prospect: Prospect) => void;
+  onGenerateMailPack?: (prospect: Prospect) => void;
 }
 
 export const ResultsTable: React.FC<ResultsTableProps> = ({
   prospects,
   loading,
-  noResultsMessage = "Enter search criteria and click 'Find Solar Leads'",
-  onSelectProspect,
+  noResultsMessage = 'No viable commercial roofs found for this search.',
+  generatingPackId,
+  onViewImage,
+  onGenerateMailPack,
 }) => {
-  const [selectedRow, setSelectedRow] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'largest' | 'smallest'>('largest');
+
+  const sortedProspects = [...prospects].sort((a, b) => {
+    if (sortOrder === 'largest') {
+      return b.roof_area_sqm - a.roof_area_sqm;
+    }
+    return a.roof_area_sqm - b.roof_area_sqm;
+  });
 
   if (loading) {
     return (
-      <div className="text-center py-12">
-        <div className="inline-block animate-spin text-3xl">⏳</div>
-        <p className="mt-3 text-gray-600">Searching real buildings nearby...</p>
+      <div className="rounded-xl border border-slate-700 bg-slate-900 p-10 text-center">
+        <p className="text-slate-200">Searching...</p>
       </div>
     );
   }
 
   if (prospects.length === 0) {
     return (
-      <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-        <p className="text-gray-600">{noResultsMessage}</p>
+      <div className="rounded-xl border border-slate-700 bg-slate-900 p-10 text-center">
+        <p className="text-slate-300">{noResultsMessage}</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-lg">
+      <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+          Solar Prospects
+        </h3>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Sort
+          </label>
+          <select
+            title="Roof size sort order"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as 'largest' | 'smallest')}
+            className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+          >
+            <option value="largest">Largest Roof - Smallest Roof</option>
+            <option value="smallest">Smallest Roof - Largest Roof</option>
+          </select>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white sticky top-0">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-800 text-slate-200">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Address</th>
-              <th className="px-4 py-3 text-left font-semibold">Business</th>
-              <th className="px-4 py-3 text-left font-semibold">Type</th>
-              <th className="px-4 py-3 text-right font-semibold">Roof (m²)</th>
-              <th className="px-4 py-3 text-right font-semibold">Capacity (kW)</th>
-              <th className="px-4 py-3 text-right font-semibold">Annual kWh</th>
-              <th className="px-4 py-3 text-right font-semibold">Savings Potential</th>
-              <th className="px-4 py-3 text-center font-semibold">Score</th>
-              <th className="px-4 py-3 text-center font-semibold">Action</th>
+              <th className="px-4 py-3 text-left font-semibold">Building Type</th>
+              <th className="px-4 py-3 text-right font-semibold">Roof Size</th>
+              <th className="px-4 py-3 text-right font-semibold">Panels</th>
+              <th className="px-4 py-3 text-center font-semibold">View Img</th>
+              <th className="px-4 py-3 text-center font-semibold">Generate Mail Pack</th>
             </tr>
           </thead>
           <tbody>
-            {prospects.map((prospect) => (
-              <tr
-                key={prospect.osm_id}
-                className={`border-b transition-colors cursor-pointer ${
-                  selectedRow === prospect.osm_id ? 'bg-blue-50' : 'bg-white hover:bg-gray-50'
-                }`}
-                onClick={() => {
-                  setSelectedRow(prospect.osm_id);
-                  onSelectProspect?.(prospect);
-                }}
-              >
-                {/* Address */}
-                <td className="px-4 py-3 font-medium text-gray-900 truncate max-w-xs">
-                  {prospect.address}
+            {sortedProspects.map((prospect) => (
+              <tr key={prospect.osm_id} className="border-t border-slate-800 text-slate-100">
+                <td className="max-w-sm truncate px-4 py-3">{prospect.address}</td>
+                <td className="px-4 py-3 text-slate-300">{prospect.building_type}</td>
+                <td className="px-4 py-3 text-right text-slate-300">
+                  {Math.round(prospect.roof_area_sqm).toLocaleString()} sqm
                 </td>
-
-                {/* Business Name */}
-                <td className="px-4 py-3 text-gray-600 truncate">
-                  {prospect.business_name || '—'}
+                <td className="px-4 py-3 text-right text-slate-300">
+                  {prospect.estimated_panel_count.toLocaleString()}
                 </td>
-
-                {/* Building Type */}
-                <td className="px-4 py-3">
-                  <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold">
-                    {prospect.building_type}
-                  </span>
-                </td>
-
-                {/* Roof Size */}
-                <td className="px-4 py-3 text-right text-gray-600">
-                  {Math.round(prospect.roof_area_sqm).toLocaleString()}
-                </td>
-
-                {/* Capacity Range */}
-                <td className="px-4 py-3 text-right text-gray-600 font-mono">
-                  {prospect.capacity_low_kw.toFixed(1)} – {prospect.capacity_high_kw.toFixed(1)}
-                </td>
-
-                {/* Annual Generation */}
-                <td className="px-4 py-3 text-right text-gray-600 font-mono">
-                  {Math.round(prospect.annual_kwh).toLocaleString()}
-                </td>
-
-                {/* Savings Potential */}
-                <td className="px-4 py-3 text-right font-semibold text-green-700">
-                  {prospect.savings_potential_display}
-                </td>
-
-                {/* Solar Score Badge */}
-                <td className="px-4 py-3 text-center">
-                  <div
-                    className={`inline-flex items-center justify-center w-10 h-10 rounded-full font-bold text-white ${
-                      prospect.solar_score >= 75
-                        ? 'bg-green-600'
-                        : prospect.solar_score >= 60
-                          ? 'bg-yellow-600'
-                          : prospect.solar_score >= 40
-                            ? 'bg-orange-600'
-                            : 'bg-red-600'
-                    }`}
-                  >
-                    {prospect.solar_score}
-                  </div>
-                </td>
-
-                {/* Detail Button */}
                 <td className="px-4 py-3 text-center">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectProspect?.(prospect);
-                    }}
-                    className="px-3 py-1 bg-green-600 text-white rounded font-semibold text-xs hover:bg-green-700 transition"
+                    onClick={() => onViewImage?.(prospect)}
+                    className="rounded-md border border-cyan-500 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
                   >
-                    View
+                    View Img
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button
+                    onClick={() => onGenerateMailPack?.(prospect)}
+                    disabled={generatingPackId === prospect.osm_id}
+                    className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                  >
+                    {generatingPackId === prospect.osm_id
+                      ? 'Generating Pack...'
+                      : 'Generate Mail Pack'}
                   </button>
                 </td>
               </tr>
@@ -134,11 +113,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
         </table>
       </div>
 
-      {/* Summary Footer */}
-      <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
-        <p className="text-sm text-gray-600">
-          Found <strong>{prospects.length}</strong> commercial buildings with solar potential
-        </p>
+      <div className="border-t border-slate-700 px-4 py-3 text-sm text-slate-400">
+        {sortedProspects.length} real commercial properties found
       </div>
     </div>
   );

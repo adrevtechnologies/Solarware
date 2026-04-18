@@ -5,70 +5,65 @@ interface ProposalModalProps {
   isOpen: boolean;
   onClose: () => void;
   prospect?: Prospect;
+  generating?: boolean;
+  onGenerateMailPack?: () => void;
 }
 
-export const ProposalModal: React.FC<ProposalModalProps> = ({ isOpen, onClose, prospect }) => {
+export const ProposalModal: React.FC<ProposalModalProps> = ({
+  isOpen,
+  onClose,
+  prospect,
+  generating,
+  onGenerateMailPack,
+}) => {
   if (!isOpen || !prospect) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 rounded-t-lg">
-          <h2 className="text-2xl font-bold">{prospect.address}</h2>
-          <p className="text-green-100 mt-1">{prospect.business_name || 'Commercial Property'}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="border-b border-slate-700 px-6 py-4">
+          <h2 className="text-lg font-bold text-slate-100">{prospect.address}</h2>
+          <p className="mt-1 text-sm text-slate-400">{prospect.building_type}</p>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Capacity */}
-          <div className="border-b pb-4">
-            <p className="text-sm text-gray-600 mb-1">Estimated Solar Capacity</p>
-            <p className="text-3xl font-bold text-green-600">
-              {prospect.capacity_low_kw.toFixed(1)} - {prospect.capacity_high_kw.toFixed(1)} kW
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Based on {Math.round(prospect.roof_area_sqm).toLocaleString()} m2 roof area
-            </p>
+        <div className="p-6">
+          <div className="overflow-hidden rounded-lg border border-slate-700">
+            <img
+              src={prospect.satellite_image_url}
+              alt={`Satellite roof view for ${prospect.address}`}
+              className="h-auto w-full"
+            />
           </div>
 
-          {/* Annual Generation */}
-          <div className="border-b pb-4">
-            <p className="text-sm text-gray-600 mb-1">Estimated Annual Generation</p>
-            <p className="text-2xl font-bold text-green-600">
-              {Math.round(prospect.annual_kwh).toLocaleString()} kWh
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Based on regional solar yield</p>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-300 sm:grid-cols-4">
+            <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+              Roof: {Math.round(prospect.roof_area_sqm)} sqm
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+              Panels: {prospect.estimated_panel_count}
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+              Capacity: {prospect.capacity_high_kw.toFixed(1)} kW
+            </div>
+            <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+              Savings: {prospect.savings_potential_display}
+            </div>
           </div>
+        </div>
 
-          {/* Savings */}
-          <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600 mb-1">Estimated Annual Savings Potential</p>
-            <p className="text-3xl font-bold text-green-600">
-              {prospect.savings_potential_display}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Tariff scenarios R1.80 to R3.20 per kWh</p>
-          </div>
-
-          {/* Solar Score */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Solar Score:</span>
-            <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full font-bold text-sm">
-              {prospect.solar_score}/100
-            </span>
-          </div>
-
-          {/* CTA */}
-          <button className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">
-            Generate Proposal
+        <div className="flex items-center justify-end gap-3 border-t border-slate-700 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-md border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+          >
+            Close
           </button>
-        </div>
-
-        {/* Footer */}
-        <div className="border-t bg-gray-50 px-6 py-4 rounded-b-lg flex justify-between">
-          <p className="text-xs text-gray-500">*Estimates based on local averages</p>
-          <button onClick={onClose} className="text-gray-600 hover:text-gray-900 font-semibold">
-            ✕
+          <button
+            onClick={onGenerateMailPack}
+            disabled={generating}
+            className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+          >
+            {generating ? 'Generating Pack...' : 'Generate Mail Pack'}
           </button>
         </div>
       </div>

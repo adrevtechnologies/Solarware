@@ -28,17 +28,20 @@ class GeoLocation(BaseModel):
     bbox: Tuple[float, float, float, float]  # (min_lat, max_lat, min_lon, max_lon)
 
 
-def geocode_address(address: str, city: str = "", province: str = "") -> Optional[GeoLocation]:
+def geocode_address(
+    address: str,
+    city: str = "",
+    province: str = "",
+    suburb: str = "",
+    postcode: str = "",
+    country: str = "South Africa",
+) -> Optional[GeoLocation]:
     """
     Convert address/city/province to coordinates using Nominatim
     RETURNS: GeoLocation with lat/lon/full address
     """
-    query = address
-    if city:
-        query += f", {city}"
-    if province:
-        query += f", {province}"
-    query += ", South Africa"
+    parts = [address, suburb, city, province, postcode, country or "South Africa"]
+    query = ", ".join([p.strip() for p in parts if p and p.strip()])
 
     try:
         response = requests.get(

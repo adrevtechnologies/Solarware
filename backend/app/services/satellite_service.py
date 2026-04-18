@@ -7,6 +7,7 @@ import logging
 from typing import Optional, Tuple
 import base64
 import io
+from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +20,38 @@ def get_satellite_image_url(latitude: float, longitude: float, width: int = 400,
     
     RETURNS: URL to satellite image (top-down view of building)
     """
-    zoom = 18  # Street level detail
-    
-    url = (
-        f"https://maps.googleapis.com/maps/api/staticmap?"
-        f"center={latitude},{longitude}"
-        f"&zoom={zoom}"
-        f"&size={width}x{height}"
-        f"&maptype=satellite"
-        f"&style=feature:all|element:labels|visibility:off"
+    settings = get_settings()
+    google_api_key = settings.GOOGLE_MAPS_API_KEY
+
+    if google_api_key:
+        zoom = 18
+        return (
+            f"https://maps.googleapis.com/maps/api/staticmap?"
+            f"center={latitude},{longitude}"
+            f"&zoom={zoom}"
+            f"&size={width}x{height}"
+            f"&maptype=satellite"
+            f"&style=feature:all|element:labels|visibility:off"
+            f"&key={google_api_key}"
+        )
+
+    # No-key fallback using ArcGIS World Imagery export endpoint.
+    lat_delta = 0.0012
+    lon_delta = 0.0012
+    min_lon = longitude - lon_delta
+    min_lat = latitude - lat_delta
+    max_lon = longitude + lon_delta
+    max_lat = latitude + lat_delta
+
+    return (
+        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?"
+        f"bbox={min_lon},{min_lat},{max_lon},{max_lat}"
+        "&bboxSR=4326"
+        f"&size={width},{height}"
+        "&imageSR=4326"
+        "&format=jpg"
+        "&f=image"
     )
-    
-    return url
 
 
 def get_mapbox_satellite_url(latitude: float, longitude: float, width: int = 400, height: int = 400, access_token: Optional[str] = None) -> Optional[str]:

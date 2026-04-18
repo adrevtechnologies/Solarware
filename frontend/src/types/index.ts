@@ -21,8 +21,13 @@ export interface Prospect {
   suburb?: string;
   city?: string;
   business_name?: string;
-  building_type: string; // warehouse, retail, office, school, church, hospital, farm, industrial
+  building_type: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  contact_person?: string;
   roof_area_sqm: number;
+  estimated_panel_count: number;
   capacity_low_kw: number;
   capacity_high_kw: number;
   annual_kwh: number;
@@ -33,6 +38,30 @@ export interface Prospect {
   satellite_image_url: string;
   latitude: number;
   longitude: number;
+}
+
+export interface SearchRequestV1 {
+  country: string;
+  province: string;
+  city: string;
+  suburb: string;
+  street_name?: string;
+  street_number?: string;
+  postcode?: string;
+  radius_m?: number;
+  min_roof_sqm?: number;
+  include_residential?: boolean;
+}
+
+export interface MailPack {
+  id: string;
+  before_image_url: string;
+  after_image_url: string;
+  before_after_image_url: string;
+  pdf_url: string;
+  email_subject: string;
+  email_body: string;
+  outreach_email: string;
 }
 
 export interface Contact {

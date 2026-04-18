@@ -1,8 +1,12 @@
 """Mailing pack generation services."""
 from typing import Dict, Optional
 from datetime import datetime
+from pathlib import Path
 from jinja2 import Template
 import uuid
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 from ..core.logging import logger
 from ..core.errors import MailingPackError
 from ..utils import ensure_output_dir, save_file
@@ -11,39 +15,20 @@ from ..utils import ensure_output_dir, save_file
 class MailingPackGenerator:
     """Generates mailing packs for prospects."""
 
-    # Email template
-    PROSPECT_EMAIL_TEMPLATE = """Subject: {{subject}}
+    PROSPECT_EMAIL_TEMPLATE = """Subject: Solar Savings Opportunity for {{business_name}}
 
-Dear {{recipient_name}},
+Hi {{recipient_name}},
 
-We've reviewed your property at {{address}} and identified strong rooftop solar suitability for commercial outreach.
+We identified your property at {{address}} as a strong candidate for rooftop solar.
 
-PROPERTY ANALYSIS SUMMARY:
-- Building Address: {{address}}
-- Roof Area: {{roof_area_sqft:,}} sq ft ({{roof_area_sqm:,.0f}} sq m)
-- Estimated System Size: {{system_capacity_kw}} kW
-- Roof Suitability Score: {{suitability_score}}/100
-- Opportunity Tier: {{opportunity_tier}}
+Based on available roof area, your site may support approximately {{panel_count}} panels with meaningful annual electricity savings.
 
-SOLAR INSTALLATION PROPOSAL:
-- Recommended Panel Count: {{panel_count}} solar panels
-- System Configuration: {{system_capacity_kw}} kW capacity
-- Expected Payback Period: {{payback_years}} years (typical)
-- System Efficiency: {{system_efficiency:.0%}}
+We prepared a visual concept for your property.
 
-OPPORTUNITY SNAPSHOT:
-- Suitable roof area and clear panel layout potential
-- Commercial-scale rooftop suitable for a discovery call
-- Visual proposal generated for quick decision support
+Would you be open to a short discussion?
 
-NEXT STEPS:
-We've prepared detailed visual mockups of how solar panels would look on your roof,
-included in this proposal. We'd love to discuss how solar can benefit your business.
-
-Please feel free to contact us at your convenience to schedule a consultation.
-
-Best regards,
-Solar Energy Team
+Regards,
+Solarware
 """
 
     @staticmethod
@@ -59,7 +44,8 @@ Solar Energy Team
         """Create concise multi-channel outreach copy for the same lead."""
         business_name = prospect.get("business_name") or "your business"
         address = prospect.get("address") or "your property"
-        roof_area_sqft = int(prospect.get("roof_area_sqft") or 0)
+        roof_area_sqm = float(prospect.get("roof_area_sqm") or 0)
+        roof_area_sqft = int(round(roof_area_sqm * 10.7639))
         tier = MailingPackGenerator._opportunity_tier(suitability_score)
 
         cold_email = (
@@ -93,6 +79,7 @@ Solar Energy Team
         contact: Optional[Dict] = None,
         satellite_image_path: Optional[str] = None,
         mockup_image_path: Optional[str] = None,
+        before_after_image_path: Optional[str] = None,
     ) -> Dict:
         """Generate mailing pack for a prospect.
         
@@ -113,27 +100,20 @@ Solar Energy Team
             
             # Prepare template variables
             contact = contact or {}
-            recipient_name = contact.get("contact_name", "Valued Prospect")
-            
-            suitability_score = int(round((prospect.get("solar_confidence") or 0.0) * 100))
+            recipient_name = contact.get("contact_name") or "there"
+
+            suitability_score = int(prospect.get("solar_score") or 0)
             opportunity_tier = MailingPackGenerator._opportunity_tier(suitability_score)
-            
-            email_subject = f"Solar Installation Proposal: {prospect.get('business_name', 'Your Property')}"
+
+            email_subject = f"Solar Savings Opportunity for {prospect.get('business_name', 'Your Property')}"
 
             # Render email
             template = Template(MailingPackGenerator.PROSPECT_EMAIL_TEMPLATE)
             email_body = template.render(
-                subject=email_subject,
                 recipient_name=recipient_name,
+                business_name=prospect.get("business_name", "your business"),
                 address=prospect.get("address", "Unknown Address"),
-                roof_area_sqft=prospect.get("roof_area_sqft", 0),
-                roof_area_sqm=prospect.get("roof_area_sqm", 0),
-                system_capacity_kw=prospect.get("estimated_system_capacity_kw", 0),
-                annual_production_kwh=prospect.get("estimated_annual_production_kwh") or 0,
                 panel_count=prospect.get("estimated_panel_count", 0),
-                suitability_score=suitability_score,
-                opportunity_tier=opportunity_tier,
-                system_efficiency=0.82,
             )
             
             # Create mailing pack directory
@@ -145,6 +125,18 @@ Solar Energy Team
             email_path = pack_dir / email_filename
             with open(email_path, "w") as f:
                 f.write(email_body)
+
+            pdf_filename = f"mail_pack_{pack_id}.pdf"
+            pdf_path = pack_dir / pdf_filename
+            MailingPackGenerator._generate_pdf(
+                pdf_path=pdf_path,
+                prospect=prospect,
+                contact=contact,
+                email_subject=email_subject,
+                email_body=email_body,
+                before_image_path=satellite_image_path,
+                after_image_path=mockup_image_path,
+            )
             
             outreach_content = MailingPackGenerator.generate_outreach_content(
                 prospect=prospect,
@@ -160,9 +152,12 @@ Solar Energy Team
                 "contact_email": contact.get("email"),
                 "contact_phone": contact.get("phone"),
                 "email_subject": email_subject,
+                "email_body": email_body,
                 "email_path": str(email_path),
+                "pdf_path": str(pdf_path),
                 "satellite_image_path": satellite_image_path,
                 "mockup_image_path": mockup_image_path,
+                "before_after_image_path": before_after_image_path,
                 "system_capacity_kw": prospect.get("estimated_system_capacity_kw"),
                 "suitability_score": suitability_score,
                 "opportunity_tier": opportunity_tier,
@@ -177,6 +172,99 @@ Solar Energy Team
         except Exception as e:
             logger.error(f"Mailing pack generation failed: {str(e)}")
             raise MailingPackError(f"Failed to generate mailing pack: {str(e)}")
+
+    @staticmethod
+    def _generate_pdf(
+        pdf_path: Path,
+        prospect: Dict,
+        contact: Dict,
+        email_subject: str,
+        email_body: str,
+        before_image_path: Optional[str],
+        after_image_path: Optional[str],
+    ) -> None:
+        c = canvas.Canvas(str(pdf_path), pagesize=A4)
+        width, height = A4
+
+        y = height - 20 * mm
+        c.setFont("Helvetica-Bold", 15)
+        c.drawString(20 * mm, y, "Solarware Mail Pack")
+        y -= 10 * mm
+
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20 * mm, y, "1. Prospect Info")
+        y -= 6 * mm
+        c.setFont("Helvetica", 10)
+        lines = [
+            f"Address: {prospect.get('address', '')}",
+            f"Company: {prospect.get('business_name') or 'N/A'}",
+            f"Industry Type: {prospect.get('business_type') or 'N/A'}",
+            f"Website: {prospect.get('website') or 'N/A'}",
+            f"Phone: {prospect.get('phone') or 'N/A'}",
+            f"Email: {prospect.get('email') or 'N/A'}",
+            f"Contact Person: {prospect.get('contact_name') or contact.get('contact_name') or 'N/A'}",
+        ]
+        for line in lines:
+            c.drawString(22 * mm, y, line)
+            y -= 5 * mm
+
+        y -= 2 * mm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20 * mm, y, "2. Solar Opportunity")
+        y -= 6 * mm
+        c.setFont("Helvetica", 10)
+        opportunity = [
+            f"Roof size: {prospect.get('roof_area_sqm', 0):,.0f} sqm",
+            f"Estimated panel count: {prospect.get('estimated_panel_count', 0)}",
+            f"Estimated system size: {prospect.get('estimated_system_capacity_kw', 0):,.1f} kW",
+            f"Estimated annual generation: {prospect.get('estimated_annual_production_kwh', 0):,.0f} kWh",
+            f"Estimated annual savings range: R {int(prospect.get('savings_low', 0)):,} - R {int(prospect.get('savings_high', 0)):,}",
+        ]
+        for line in opportunity:
+            c.drawString(22 * mm, y, line)
+            y -= 5 * mm
+
+        y -= 2 * mm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20 * mm, y, "3. Outreach Email")
+        y -= 6 * mm
+        c.setFont("Helvetica", 9)
+        for line in email_body.splitlines():
+            if not line.strip():
+                y -= 3 * mm
+            else:
+                c.drawString(22 * mm, y, line[:110])
+                y -= 4 * mm
+            if y < 30 * mm:
+                c.showPage()
+                y = height - 20 * mm
+                c.setFont("Helvetica", 9)
+
+        # Render visual section on a second page when possible.
+        c.showPage()
+        y = height - 20 * mm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20 * mm, y, "4. Visual Concept")
+        y -= 8 * mm
+
+        try:
+            if before_image_path and str(before_image_path).startswith("http"):
+                import requests
+                before_data = requests.get(before_image_path, timeout=15).content
+                before_img = Path(pdf_path.parent) / "before_tmp.jpg"
+                before_img.write_bytes(before_data)
+                c.drawString(20 * mm, y, "Before image")
+                c.drawImage(str(before_img), 20 * mm, y - 80 * mm, width=80 * mm, height=60 * mm, preserveAspectRatio=True)
+                before_img.unlink(missing_ok=True)
+
+            if after_image_path and Path(after_image_path).exists():
+                c.drawString(110 * mm, y, "After image with panel overlay")
+                c.drawImage(str(after_image_path), 110 * mm, y - 80 * mm, width=80 * mm, height=60 * mm, preserveAspectRatio=True)
+        except Exception:
+            c.setFont("Helvetica", 10)
+            c.drawString(20 * mm, y, "Images unavailable for this pack run.")
+
+        c.save()
 
     @staticmethod
     def generate_batch(

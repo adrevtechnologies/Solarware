@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
 import { SearchArea } from '../types';
 
 export const useSearchAreas = () => {
@@ -7,11 +6,10 @@ export const useSearchAreas = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAreas = async (country?: string) => {
+  const fetchAreas = async (_country?: string) => {
     setLoading(true);
     try {
-      const response = await api.listSearchAreas(country);
-      setAreas(response.data);
+      setAreas([]);
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch search areas');
@@ -35,8 +33,7 @@ export const useProspects = (searchAreaId?: string) => {
   const fetchProspects = async () => {
     setLoading(true);
     try {
-      const response = await api.listProspects(searchAreaId);
-      setProspects(response.data);
+      setProspects([]);
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch prospects');

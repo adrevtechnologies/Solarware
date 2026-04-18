@@ -25,5 +25,6 @@ aiofiles==23.2.1
 cryptography==41.0.7
 pytz==2023.3
 dateparser==1.1.8
+reportlab==4.2.5
 setuptools>=68,<81
 wheel>=0.45
