@@ -104,8 +104,8 @@ export const Dashboard: React.FC = () => {
         street_name: streetParts.street_name,
         postcode: searchParams.postalCode,
         radius_m: isExactMode ? 300 : 1500,
-        include_residential: false,
-        min_roof_sqm: searchParams.minRoofSqm || 150,
+        include_residential: isExactMode,
+        min_roof_sqm: isExactMode ? 40 : (searchParams.minRoofSqm || 150),
       };
 
       console.info('[Solarware] search:start', {
@@ -266,7 +266,7 @@ export const Dashboard: React.FC = () => {
               params={searchParams}
               onParamsChange={setSearchParams}
               onSearch={handleSearch}
-                loading={loading || warmingBackend}
+              loading={loading || warmingBackend}
             />
           </div>
 

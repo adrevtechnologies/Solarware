@@ -236,7 +236,8 @@ async def search_real_prospects(
             search_area = f"{request.suburb}, {request.city}, {request.province}"
 
         # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
-        include_residential = bool(request.include_residential)
+        # Exact-address mode should include residential so a user's own house can be found.
+        include_residential = bool(request.include_residential or is_exact_address)
 
         logger.info(
             "Querying Overpass API for %s buildings near %s",
@@ -253,6 +254,18 @@ async def search_real_prospects(
             max_lon,
             include_residential=include_residential,
         )
+
+        if is_exact_address and not buildings:
+            # Exact address can miss on tiny radius; retry wider before declaring no match.
+            wider_radius_km = max(0.8, radius_km * 2)
+            min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, wider_radius_km)
+            buildings = query_commercial_buildings(
+                min_lat,
+                max_lat,
+                min_lon,
+                max_lon,
+                include_residential=True,
+            )
         
         if not buildings:
             cached = _load_cached_results(request)
@@ -277,12 +290,21 @@ async def search_real_prospects(
         if request.building_types:
             buildings = [b for b in buildings if b.building_type in request.building_types]
 
+        candidates_before_roof_filter = list(buildings)
+
         effective_min_roof_sqm = (
             request.min_roof_sqm
             if request.min_roof_sqm is not None
-            else (60 if include_residential else 150)
+            else (40 if is_exact_address else (60 if include_residential else 150))
         )
         buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
+
+        if is_exact_address and not buildings and candidates_before_roof_filter:
+            # For exact-address lookups, return nearest building even if roof estimate is small.
+            buildings = sorted(
+                candidates_before_roof_filter,
+                key=lambda b: (b.latitude - center_lat) ** 2 + (b.longitude - center_lon) ** 2,
+            )[:1]
 
         if not buildings:
             return SearchResponse(
