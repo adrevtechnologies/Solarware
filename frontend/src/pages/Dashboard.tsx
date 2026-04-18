@@ -31,6 +31,8 @@ export const Dashboard: React.FC = () => {
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  const hasStreetQuery = !!searchParams.street?.trim();
+
   const splitStreetInput = (street?: string): { street_number?: string; street_name?: string } => {
     const raw = (street || '').trim();
     if (!raw) {
@@ -246,7 +248,11 @@ export const Dashboard: React.FC = () => {
             <ResultsTable
               prospects={results}
               loading={loading}
-              noResultsMessage={`No viable commercial roofs found in ${searchParams.area}.`}
+              noResultsMessage={
+                hasStreetQuery
+                  ? 'No targetable mapped roof found for this exact street address.'
+                  : `No viable commercial roofs found in ${searchParams.area}.`
+              }
               generatingPackId={generatingPackId}
               onViewImage={handleOpenImage}
               onGenerateMailPack={handleGenerateMailPack}
