@@ -7,12 +7,63 @@ import requests
 import logging
 from typing import List, Dict, Optional, Tuple
 import math
+import time
 from pydantic import BaseModel
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+]
+DEFAULT_HEADERS = {"User-Agent": "Solarware/1.0"}
+
+
+def _query_overpass_xml(query: str) -> Optional[str]:
+    """Query Overpass with endpoint failover and retry/backoff for 429/5xx."""
+    max_attempts_per_endpoint = 2
+
+    for endpoint in OVERPASS_ENDPOINTS:
+        for attempt in range(1, max_attempts_per_endpoint + 1):
+            try:
+                response = requests.post(
+                    endpoint,
+                    data={"data": query},
+                    timeout=45,
+                    headers=DEFAULT_HEADERS,
+                )
+
+                # Retry on rate-limit and transient server errors.
+                if response.status_code in (429, 500, 502, 503, 504):
+                    logger.warning(
+                        "Overpass transient error %s on %s (attempt %s/%s)",
+                        response.status_code,
+                        endpoint,
+                        attempt,
+                        max_attempts_per_endpoint,
+                    )
+                    if attempt < max_attempts_per_endpoint:
+                        time.sleep(1.5 * attempt)
+                    continue
+
+                response.raise_for_status()
+                return response.text
+
+            except requests.exceptions.RequestException as e:
+                logger.warning(
+                    "Overpass request failed on %s (attempt %s/%s): %s",
+                    endpoint,
+                    attempt,
+                    max_attempts_per_endpoint,
+                    e,
+                )
+                if attempt < max_attempts_per_endpoint:
+                    time.sleep(1.5 * attempt)
+
+    logger.error("All Overpass endpoints failed")
+    return None
 
 
 class BuildingPolygon(BaseModel):
@@ -24,6 +75,7 @@ class BuildingPolygon(BaseModel):
     longitude: float
     address: Optional[str] = None
     suburb: Optional[str] = None
+    roof_area_sqm: float
     nodes: List[Tuple[float, float]]  # Polygon coordinates
 
 
@@ -83,20 +135,16 @@ def query_commercial_buildings(
     """
 
     try:
-        response = requests.post(
-            OVERPASS_URL,
-            data={"data": query},
-            timeout=30,
-            headers={"User-Agent": "Solarware/1.0"}
-        )
-        response.raise_for_status()
-        
+        xml_text = _query_overpass_xml(query)
+        if not xml_text:
+            return []
+
         buildings = []
         
         # Parse XML response
         try:
-            root = ET.fromstring(response.text)
-        except:
+            root = ET.fromstring(xml_text)
+        except Exception:
             logger.warning(f"Failed to parse Overpass response for bbox {bbox_str}")
             return []
 
@@ -138,12 +186,24 @@ def query_commercial_buildings(
             # Extract polygon nodes
             nodes = []
             for nd in way.findall("nd"):
+                # Prefer geom attributes returned directly on nd by `out geom`
+                nd_lat = nd.get("lat")
+                nd_lon = nd.get("lon")
+                if nd_lat is not None and nd_lon is not None:
+                    nodes.append((float(nd_lat), float(nd_lon)))
+                    continue
+
+                # Fallback to referenced node lookup when geometry attrs are absent.
                 ref = nd.get("ref")
-                # Find coordinate in ways
-                for node in root.findall(f".//node[@id='{ref}']"):
-                    lat = float(node.get("lat"))
-                    lon = float(node.get("lon"))
-                    nodes.append((lat, lon))
+                if not ref:
+                    continue
+                node = root.find(f".//node[@id='{ref}']")
+                if node is None:
+                    continue
+                lat = node.get("lat")
+                lon = node.get("lon")
+                if lat is not None and lon is not None:
+                    nodes.append((float(lat), float(lon)))
 
             # Only include if we have polygon
             if len(nodes) < 3:
@@ -169,6 +229,7 @@ def query_commercial_buildings(
                 longitude=avg_lon,
                 address=tags.get("addr:street"),
                 suburb=tags.get("addr:suburb"),
+                roof_area_sqm=roof_area_sqm,
                 nodes=nodes
             )
 
@@ -178,9 +239,6 @@ def query_commercial_buildings(
         logger.info(f"Overpass query found {len(buildings)} commercial buildings")
         return buildings
 
-    except requests.exceptions.ConnectTimeout:
-        logger.error("Overpass API timeout - server may be rate limiting")
-        return []
     except Exception as e:
         logger.error(f"Overpass API error: {e}")
         return []
