@@ -186,12 +186,75 @@ def _select_exact_target_building(buildings, lat: float, lon: float, max_distanc
     return best_building
 
 
+def _normalize_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in value.lower() if ch.isalnum() or ch.isspace()).strip()
+
+
+def _address_tag_matches(
+    buildings,
+    street_number: Optional[str],
+    street_name: Optional[str],
+):
+    if not street_number or not street_name:
+        return []
+
+    target_number = _normalize_text(street_number)
+    target_street = _normalize_text(street_name)
+    matches = []
+    for building in buildings:
+        b_number = _normalize_text(getattr(building, "house_number", None))
+        b_street = _normalize_text(getattr(building, "street", None))
+        if not b_number or not b_street:
+            continue
+        if b_number == target_number and (target_street in b_street or b_street in target_street):
+            matches.append(building)
+    return matches
+
+
 def _nearest_building_with_distance(buildings, lat: float, lon: float):
     if not buildings:
         return None, float("inf")
     scored = [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings]
     scored.sort(key=lambda item: item[0])
     return scored[0][1], scored[0][0]
+
+
+def _street_match(value: Optional[str], target: Optional[str]) -> bool:
+    if not value or not target:
+        return False
+    a = _normalize_text(value)
+    b = _normalize_text(target)
+    return a == b or a in b or b in a
+
+
+def _nearest_building_on_requested_street(
+    buildings,
+    lat: float,
+    lon: float,
+    requested_street: Optional[str],
+):
+    if not buildings or not requested_street:
+        return None, float("inf")
+
+    scored = sorted(
+        [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings],
+        key=lambda item: item[0],
+    )
+
+    # First pass: explicit OSM addr:street tags on buildings.
+    tagged = [(d, b) for d, b in scored if _street_match(getattr(b, "street", None), requested_street)]
+    if tagged:
+        return tagged[0][1], tagged[0][0]
+
+    # Second pass: reverse-geocode top nearest candidates and enforce street match.
+    for d, b in scored[:15]:
+        rg = reverse_geocode(b.latitude, b.longitude) or {}
+        if _street_match(rg.get("street"), requested_street):
+            return b, d
+
+    return None, float("inf")
 
 
 def _to_public_output_url(file_path: str | None) -> str | None:
@@ -365,6 +428,24 @@ async def search_real_prospects(
             )
 
         if is_exact_address:
+            tag_matched = _address_tag_matches(
+                buildings,
+                request.street_number,
+                request.street_name,
+            )
+            if tag_matched:
+                target_building, nearest_distance_m = _nearest_building_with_distance(
+                    tag_matched,
+                    center_lat,
+                    center_lon,
+                )
+                exact_match_note = (
+                    f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
+                )
+            else:
+                target_building = None
+
+        if is_exact_address and not target_building:
             target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
             if not target_building:
                 polygon = geocode_address_polygon(
@@ -388,16 +469,17 @@ async def search_real_prospects(
                     )
 
             if not target_building:
-                nearest_building, nearest_distance_m = _nearest_building_with_distance(
+                nearest_building, nearest_distance_m = _nearest_building_on_requested_street(
                     buildings,
                     center_lat,
                     center_lon,
+                    request.street_name,
                 )
                 max_nearest_distance_m = max(250.0, radius_km * 1000.0)
                 if nearest_building and nearest_distance_m <= max_nearest_distance_m:
                     target_building = nearest_building
                     exact_match_note = (
-                        f"No exact footprint at address point. Using nearest mapped building "
+                        f"No exact footprint at address point. Using nearest mapped building on {request.street_name} "
                         f"{nearest_distance_m:.0f}m away."
                     )
                 else:
@@ -490,6 +572,13 @@ async def search_real_prospects(
                 geo_result = reverse_geocode(building.latitude, building.longitude)
                 address = geo_result.get("address") if geo_result else f"{building.latitude}, {building.longitude}"
 
+                is_residential_exact = bool(is_exact_address and building.building_type == "residential")
+                business_name = None if is_residential_exact else building.name
+                website = None if is_residential_exact else building.website
+                phone = None if is_residential_exact else building.phone
+                email = None if is_residential_exact else building.email
+                contact_person = None if is_residential_exact else building.contact_person
+
                 # Format savings display
                 savings_low = int(solar["savings_low"])
                 savings_high = int(solar["savings_high"])
@@ -500,12 +589,12 @@ async def search_real_prospects(
                     address=address,
                     suburb=geo_result.get("suburb") if geo_result else None,
                     city=geo_result.get("city") if geo_result else None,
-                    business_name=building.name,
+                    business_name=business_name,
                     building_type=building.building_type,
-                    website=building.website,
-                    phone=building.phone,
-                    email=building.email,
-                    contact_person=building.contact_person,
+                    website=website,
+                    phone=phone,
+                    email=email,
+                    contact_person=contact_person,
                     roof_area_sqm=solar["roof_area_sqm"],
                     estimated_panel_count=solar["estimated_panel_count"],
                     capacity_low_kw=solar["capacity_low_kw"],
