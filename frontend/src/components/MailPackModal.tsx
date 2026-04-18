@@ -68,19 +68,41 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
               Before Image
             </h3>
-            <img
-              src={pack.before_image_url}
-              alt="Before roof"
-              className="w-full rounded-lg border border-slate-700"
-            />
+            <div className="overflow-hidden rounded-lg border border-slate-700">
+              <div className="relative">
+                <img src={pack.before_image_url} alt="Before roof" className="w-full" />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
+                </div>
+              </div>
+              <div className="border-t border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300">
+                Red marker shows the searched address at image center.
+              </div>
+            </div>
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
               After Image
             </h3>
-            <img
-              src={pack.after_image_url}
-              alt="After roof with panel overlay"
-              className="w-full rounded-lg border border-slate-700"
-            />
+            <div className="overflow-hidden rounded-lg border border-slate-700">
+              <div className="relative">
+                <img
+                  src={pack.after_image_url}
+                  alt="After roof with panel overlay"
+                  className="w-full"
+                />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
+                </div>
+              </div>
+            </div>
+
+            <a
+              href={`https://www.google.com/maps?q=${prospect.latitude},${prospect.longitude}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center rounded-md border border-cyan-500 px-3 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
+            >
+              Open exact location in Maps
+            </a>
           </div>
 
           <div className="space-y-4">
