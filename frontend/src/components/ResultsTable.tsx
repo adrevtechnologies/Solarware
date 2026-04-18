@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Prospect } from '../types';
 
 interface ResultsTableProps {
@@ -18,14 +18,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   onViewImage,
   onGenerateMailPack,
 }) => {
-  const [sortOrder, setSortOrder] = useState<'largest' | 'smallest'>('largest');
-
-  const sortedProspects = [...prospects].sort((a, b) => {
-    if (sortOrder === 'largest') {
-      return b.roof_area_sqm - a.roof_area_sqm;
-    }
-    return a.roof_area_sqm - b.roof_area_sqm;
-  });
+  const sortedProspects = [...prospects].sort((a, b) => b.roof_area_sqm - a.roof_area_sqm);
 
   if (loading) {
     return (
@@ -53,15 +46,9 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Sort
           </label>
-          <select
-            title="Roof size sort order"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value as 'largest' | 'smallest')}
-            className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100"
-          >
-            <option value="largest">Largest Roof - Smallest Roof</option>
-            <option value="smallest">Smallest Roof - Largest Roof</option>
-          </select>
+          <span className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100">
+            Largest Roof - Smallest Roof
+          </span>
         </div>
       </div>
 

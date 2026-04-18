@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MailPack, Prospect } from '../types';
 
 interface MailPackModalProps {
@@ -20,9 +20,15 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
 }) => {
   const [recipientEmail, setRecipientEmail] = useState('');
 
+  useEffect(() => {
+    if (isOpen) {
+      setRecipientEmail(prospect?.email || '');
+    }
+  }, [isOpen, prospect?.email]);
+
   const defaultEmail = useMemo(() => {
-    return prospect?.email || recipientEmail;
-  }, [prospect?.email, recipientEmail]);
+    return recipientEmail;
+  }, [recipientEmail]);
 
   if (!isOpen || !pack || !prospect) {
     return null;
