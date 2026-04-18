@@ -183,6 +183,14 @@ def _select_exact_target_building(buildings, lat: float, lon: float, max_distanc
     return best_building
 
 
+def _nearest_building_with_distance(buildings, lat: float, lon: float):
+    if not buildings:
+        return None, float("inf")
+    scored = [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings]
+    scored.sort(key=lambda item: item[0])
+    return scored[0][1], scored[0][0]
+
+
 def _to_public_output_url(file_path: str | None) -> str | None:
     if not file_path:
         return None
@@ -262,6 +270,7 @@ async def search_real_prospects(
     
     try:
         query_str: Optional[str] = None
+        exact_match_note: Optional[str] = None
 
         # STEP 1: Validate required context fields for V1.
         if not request.country or not request.province or not request.city or not request.suburb:
@@ -353,12 +362,25 @@ async def search_real_prospects(
         if is_exact_address:
             target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
             if not target_building:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=search_area,
-                    message="No building footprint found for exact address.",
+                nearest_building, nearest_distance_m = _nearest_building_with_distance(
+                    buildings,
+                    center_lat,
+                    center_lon,
                 )
+                max_nearest_distance_m = max(250.0, radius_km * 1000.0)
+                if nearest_building and nearest_distance_m <= max_nearest_distance_m:
+                    target_building = nearest_building
+                    exact_match_note = (
+                        f"No exact footprint at address point. Using nearest mapped building "
+                        f"{nearest_distance_m:.0f}m away."
+                    )
+                else:
+                    return SearchResponse(
+                        results=[],
+                        count=0,
+                        search_area=search_area,
+                        message="No building footprint found for exact address.",
+                    )
             buildings = [target_building]
         
         if not buildings:
@@ -482,11 +504,17 @@ async def search_real_prospects(
 
         logger.info(f"Search completed: {len(results)} prospects found in {search_area}")
         
+        response_message = (
+            exact_match_note
+            if (is_exact_address and exact_match_note)
+            else f"Found {len(results)} properties with solar potential in {search_area}"
+        )
+
         response = SearchResponse(
             results=results,
             count=len(results),
             search_area=search_area,
-            message=f"Found {len(results)} properties with solar potential in {search_area}",
+            message=response_message,
         )
         _save_cached_results(request, response)
         return response
