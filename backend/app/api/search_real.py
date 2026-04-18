@@ -182,6 +182,54 @@ async def search_real_prospects(
     """
     
     try:
+        query_str: Optional[str] = None
+
+        def build_exact_address_fallback(message: str) -> SearchResponse:
+            fallback_roof_sqm = float(request.min_roof_sqm or 80)
+            fallback_roof_sqm = max(40.0, fallback_roof_sqm)
+
+            solar = get_solar_stats(
+                fallback_roof_sqm,
+                "residential",
+                province=request.province,
+            )
+
+            image_url = get_satellite_image_url(center_lat, center_lon)
+            geo_result = reverse_geocode(center_lat, center_lon) or {}
+            resolved_address = geo_result.get("address") or search_area
+            savings_low = int(solar["savings_low"])
+            savings_high = int(solar["savings_high"])
+            savings_display = f"R {savings_low/1000:.0f}k - R {savings_high/1000:.0f}k / year"
+            synthetic_id = hashlib.sha256((query_str or search_area).encode("utf-8")).hexdigest()[:12]
+
+            prospect = SolarProspect(
+                osm_id=f"address-{synthetic_id}",
+                address=resolved_address,
+                suburb=geo_result.get("suburb") if geo_result else None,
+                city=geo_result.get("city") if geo_result else request.city,
+                business_name=geo_result.get("house") if geo_result else None,
+                building_type="residential",
+                roof_area_sqm=solar["roof_area_sqm"],
+                estimated_panel_count=solar["estimated_panel_count"],
+                capacity_low_kw=solar["capacity_low_kw"],
+                capacity_high_kw=solar["capacity_high_kw"],
+                annual_kwh=solar["annual_kwh_mid"],
+                savings_low=solar["savings_low"],
+                savings_high=solar["savings_high"],
+                savings_potential_display=savings_display,
+                solar_score=solar["solar_score"],
+                satellite_image_url=image_url,
+                latitude=center_lat,
+                longitude=center_lon,
+            )
+
+            return SearchResponse(
+                results=[prospect],
+                count=1,
+                search_area=search_area,
+                message=message,
+            )
+
         # STEP 1: Validate required context fields for V1.
         if not request.country or not request.province or not request.city or not request.suburb:
             return SearchResponse(
@@ -268,6 +316,11 @@ async def search_real_prospects(
             )
         
         if not buildings:
+            if is_exact_address:
+                return build_exact_address_fallback(
+                    "Address found. Using address-level rooftop estimate because no mapped building polygon was returned."
+                )
+
             cached = _load_cached_results(request)
             if cached:
                 return SearchResponse(
@@ -307,6 +360,11 @@ async def search_real_prospects(
             )[:1]
 
         if not buildings:
+            if is_exact_address:
+                return build_exact_address_fallback(
+                    "Address found. Using address-level rooftop estimate because strict filters removed mapped buildings."
+                )
+
             return SearchResponse(
                 results=[],
                 count=0,
