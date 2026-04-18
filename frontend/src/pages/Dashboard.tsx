@@ -53,15 +53,16 @@ export const Dashboard: React.FC = () => {
     try {
       const streetParts = splitStreetInput(searchParams.street);
       const payload = {
-        mode: streetParts.street_name ? 'address' : 'area',
+        mode: 'area',
         country: searchParams.country,
         province: searchParams.province,
         city: searchParams.city,
         suburb: searchParams.area,
         street_number: streetParts.street_number,
         street_name: streetParts.street_name,
+        exact_address: false,
         postcode: searchParams.postalCode,
-        radius_m: streetParts.street_name ? 300 : 1500,
+        radius_m: 1500,
         include_residential: false,
         min_roof_sqm: searchParams.minRoofSqm || 150,
       };
@@ -171,9 +172,7 @@ export const Dashboard: React.FC = () => {
               {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
               {!searchMessage && (
                 <p className="mt-1 text-sm text-slate-400">
-                  {searchParams.street?.trim()
-                    ? 'Exact address mode active.'
-                    : `Area mode active for ${searchParams.area}, ${searchParams.city}.`}
+                  {`Area mode active for ${searchParams.area}, ${searchParams.city}.`}
                 </p>
               )}
             </div>
