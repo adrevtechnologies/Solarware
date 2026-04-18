@@ -16,15 +16,23 @@ export interface SearchArea {
 }
 
 export interface Prospect {
-  id: string;
+  osm_id: string;
   address: string;
+  suburb?: string;
+  city?: string;
   business_name?: string;
-  property_type?: string;
-  roof_size_sqft: number;
-  solar_score: number;
-  contact_status: string;
-  phone?: string;
-  email?: string;
+  building_type: string; // warehouse, retail, office, school, church, hospital, farm, industrial
+  roof_area_sqm: number;
+  capacity_low_kw: number;
+  capacity_high_kw: number;
+  annual_kwh: number;
+  savings_low: number;
+  savings_high: number;
+  savings_potential_display: string; // "R xxx k – R xxx k / year"
+  solar_score: number; // 0-100
+  satellite_image_url: string;
+  latitude: number;
+  longitude: number;
 }
 
 export interface Contact {

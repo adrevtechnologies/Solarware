@@ -13,7 +13,21 @@ const apiClient = axios.create({
 });
 
 export const api = {
-  // Search Areas
+  // REAL SEARCH - using Nominatim + Overpass
+  searchProspects: (searchParams: {
+    mode: 'address' | 'area' | 'city' | 'province' | 'country';
+    street_number?: string;
+    street_name?: string;
+    suburb?: string;
+    city?: string;
+    province?: string;
+    postcode?: string;
+    radius_m?: number;
+    building_types?: string[];
+    min_roof_sqm?: number;
+  }) => apiClient.post('/api/search', searchParams),
+
+  // Search Areas (legacy, keeping for compatibility)
   createSearchArea: (data: any) => apiClient.post('/api/search-areas', data),
   listSearchAreas: (country?: string) => {
     const params = country ? { country } : {};
@@ -22,7 +36,7 @@ export const api = {
   getSearchArea: (id: string) => apiClient.get(`/api/search-areas/${id}`),
   updateSearchArea: (id: string, data: any) => apiClient.put(`/api/search-areas/${id}`, data),
 
-  // Prospects
+  // Prospects (legacy)
   listProspects: (searchAreaId?: string, skip?: number, limit?: number) => {
     const params: Record<string, string | number> = { skip: skip || 0, limit: limit || 50 };
     if (searchAreaId) params['search_area_id'] = searchAreaId;
@@ -30,8 +44,6 @@ export const api = {
   },
   getProspect: (id: string) => apiClient.get(`/api/prospects/${id}`),
   getProspectContact: (id: string) => apiClient.get(`/api/prospects/${id}/contact`),
-  exportProspectsCSV: () => apiClient.get('/api/prospects/export-csv', { responseType: 'blob' }),
-  generateProposal: (id: string) => apiClient.post(`/api/prospects/${id}/proposal`),
 
   // Processing
   processSearchArea: (searchAreaId: string, config?: any) =>
