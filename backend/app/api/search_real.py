@@ -204,6 +204,12 @@ def _normalize_text(value: Optional[str]) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum() or ch.isspace()).strip()
 
 
+def _normalize_house_number(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in value.lower() if ch.isalnum()).strip()
+
+
 def _address_tag_matches(
     buildings,
     street_number: Optional[str],
@@ -239,6 +245,51 @@ def _street_match(value: Optional[str], target: Optional[str]) -> bool:
     a = _normalize_text(value)
     b = _normalize_text(target)
     return a == b or a in b or b in a
+
+
+def _exact_address_match(
+    candidate_street: Optional[str],
+    candidate_number: Optional[str],
+    requested_street: Optional[str],
+    requested_number: Optional[str],
+) -> bool:
+    if not _street_match(candidate_street, requested_street):
+        return False
+
+    requested_number_norm = _normalize_house_number(requested_number)
+    if not requested_number_norm:
+        return True
+
+    candidate_number_norm = _normalize_house_number(candidate_number)
+    return bool(candidate_number_norm) and candidate_number_norm == requested_number_norm
+
+
+def _find_exact_building_by_reverse_address(
+    buildings,
+    lat: float,
+    lon: float,
+    requested_street: Optional[str],
+    requested_number: Optional[str],
+):
+    if not buildings or not requested_street:
+        return None, float("inf")
+
+    scored = sorted(
+        [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings],
+        key=lambda item: item[0],
+    )
+
+    for distance_m, building in scored[:25]:
+        rg = reverse_geocode(building.latitude, building.longitude) or {}
+        if _exact_address_match(
+            rg.get("street"),
+            rg.get("house_number"),
+            requested_street,
+            requested_number,
+        ):
+            return building, distance_m
+
+    return None, float("inf")
 
 
 def _nearest_building_on_requested_street(
@@ -469,12 +520,26 @@ async def search_real_prospects(
         if is_exact_address and not target_building:
             target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=45.0)
             if not target_building:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=search_area,
-                    message="No building footprint found for exact address.",
+                reverse_match_building, reverse_match_distance_m = _find_exact_building_by_reverse_address(
+                    buildings,
+                    center_lat,
+                    center_lon,
+                    request.street_name,
+                    request.street_number,
                 )
+                if reverse_match_building:
+                    target_building = reverse_match_building
+                    exact_match_note = (
+                        f"Matched exact address {request.street_number or ''} {request.street_name} "
+                        f"via reverse-geocoded building footprint ({reverse_match_distance_m:.0f}m from geocode point)."
+                    )
+                else:
+                    return SearchResponse(
+                        results=[],
+                        count=0,
+                        search_area=search_area,
+                        message="No building footprint found for exact address.",
+                    )
             buildings = [target_building]
         
         if not buildings:
