@@ -212,6 +212,23 @@ def _normalize_house_number(value: Optional[str]) -> str:
     return "".join(ch for ch in value.lower() if ch.isalnum()).strip()
 
 
+def _address_text_matches_request(
+    full_address: Optional[str],
+    requested_street: Optional[str],
+    requested_number: Optional[str],
+) -> bool:
+    if not full_address or not requested_street or not requested_number:
+        return False
+
+    text = _normalize_text(full_address)
+    street = _normalize_text(requested_street)
+    number = _normalize_house_number(requested_number)
+    if not street or not number:
+        return False
+
+    return (street in text) and (number in _normalize_house_number(text))
+
+
 def _address_tag_matches(
     buildings,
     street_number: Optional[str],
@@ -477,6 +494,13 @@ async def search_real_prospects(
                     request.street_number,
                 )
             )
+
+            if not geocode_is_house_precise and geo:
+                geocode_is_house_precise = _address_text_matches_request(
+                    geo.address,
+                    request.street_name,
+                    request.street_number,
+                )
 
             if not geo:
                 return SearchResponse(
