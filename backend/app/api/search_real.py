@@ -431,8 +431,8 @@ async def search_real_prospects(
             min_lon,
             max_lon,
             include_residential=include_residential,
-            include_all_buildings=False,
-            min_polygon_area_sqm=60.0 if is_exact_address else 100.0,
+            include_all_buildings=is_exact_address,
+            min_polygon_area_sqm=20.0 if is_exact_address else 100.0,
         )
 
         if is_exact_address and not buildings:
@@ -445,8 +445,8 @@ async def search_real_prospects(
                 min_lon,
                 max_lon,
                 include_residential=True,
-                include_all_buildings=False,
-                min_polygon_area_sqm=60.0,
+                include_all_buildings=True,
+                min_polygon_area_sqm=20.0,
             )
 
         if is_exact_address:
@@ -467,7 +467,7 @@ async def search_real_prospects(
                 )
 
         if is_exact_address and not target_building:
-            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=20.0)
+            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=45.0)
             if not target_building:
                 return SearchResponse(
                     results=[],
@@ -504,7 +504,7 @@ async def search_real_prospects(
         effective_min_roof_sqm = (
             request.min_roof_sqm
             if request.min_roof_sqm is not None
-            else (60 if is_exact_address else 150)
+            else (20 if is_exact_address else 150)
         )
         buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
 

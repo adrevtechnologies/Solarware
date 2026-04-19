@@ -150,6 +150,8 @@ def query_commercial_buildings(
             residential_clause = """
             way[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
             relation[\"building\"~\"house|residential|detached|semidetached_house|terrace|apartments\"];
+            way[\"addr:housenumber\"][\"addr:street\"];
+            relation[\"addr:housenumber\"][\"addr:street\"];
             """
 
         # Overpass QL query for commercial buildings (and optional residential)
@@ -222,6 +224,14 @@ def query_commercial_buildings(
                 category = building_type
 
             if building_type in ["house", "residential", "detached", "semidetached_house", "terrace", "apartments"]:
+                category = "residential"
+
+            # Address-tagged `building=yes` is commonly used for mapped homes in OSM.
+            if (
+                include_residential
+                and building_type == "yes"
+                and (tags.get("addr:housenumber") or tags.get("addr:street"))
+            ):
                 category = "residential"
 
             excluded_categories = {
