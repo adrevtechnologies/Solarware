@@ -632,6 +632,52 @@ async def search_real_prospects(
                     )
 
             if not target_building:
+                if geocode_is_house_precise and geo is not None:
+                    fallback_image_url = get_satellite_image_url(center_lat, center_lon)
+                    geo_result = reverse_geocode(center_lat, center_lon) or {}
+                    fallback_address = geo_result.get("address") or geo.address or query_str or "Exact address"
+                    point_pad_lat = 0.00025
+                    point_pad_lon = 0.00025
+
+                    fallback_prospect = SolarProspect(
+                        osm_id=f"exact-point:{center_lat:.6f},{center_lon:.6f}",
+                        address=fallback_address,
+                        suburb=geo_result.get("suburb") or geo.suburb,
+                        city=geo_result.get("city") or geo.city,
+                        business_name=None,
+                        building_type="exact_address_unmapped",
+                        website=None,
+                        phone=None,
+                        email=None,
+                        contact_person=None,
+                        roof_area_sqm=0.0,
+                        estimated_panel_count=0,
+                        capacity_low_kw=0.0,
+                        capacity_high_kw=0.0,
+                        annual_kwh=0.0,
+                        savings_low=0.0,
+                        savings_high=0.0,
+                        savings_potential_display="Unavailable - mapped roof footprint not found",
+                        solar_score=0,
+                        satellite_image_url=fallback_image_url,
+                        latitude=center_lat,
+                        longitude=center_lon,
+                        roof_polygon=None,
+                        image_bbox=(
+                            center_lat - point_pad_lat,
+                            center_lat + point_pad_lat,
+                            center_lon - point_pad_lon,
+                            center_lon + point_pad_lon,
+                        ),
+                    )
+
+                    return SearchResponse(
+                        results=[fallback_prospect],
+                        count=1,
+                        search_area=search_area,
+                        message="Exact address found. No mapped roof footprint available, so image is centered on the exact address point.",
+                    )
+
                 return SearchResponse(
                     results=[],
                     count=0,
