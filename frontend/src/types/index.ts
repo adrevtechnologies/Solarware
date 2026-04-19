@@ -49,10 +49,7 @@ export interface SearchRequestV1 {
   suburb: string;
   street_name?: string;
   street_number?: string;
-  postcode?: string;
   radius_m?: number;
-  min_roof_sqm?: number;
-  include_residential?: boolean;
 }
 
 export interface MailPack {

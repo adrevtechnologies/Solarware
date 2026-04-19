@@ -12,13 +12,10 @@ from pydantic import BaseModel
 from typing import Optional, List, Tuple
 from ..services.nominatim_service import (
     geocode_address,
-    geocode_address_polygon,
     reverse_geocode,
     get_bounding_box,
 )
 from ..services.overpass_service import (
-    BuildingPolygon,
-    calculate_polygon_area,
     query_commercial_buildings,
     filter_nearby_buildings,
 )
@@ -44,12 +41,7 @@ class SearchRequest(BaseModel):
     city: Optional[str] = None
     province: Optional[str] = None
     country: Optional[str] = "South Africa"
-    postcode: Optional[str] = None
     radius_m: int = 500  # 250, 500, 1000
-    
-    # Building type filters
-    building_types: Optional[List[str]] = None  # warehouse, retail, office, school, etc
-    include_residential: bool = False
     
     # Roof filters
     min_roof_sqm: Optional[int] = None
@@ -108,6 +100,26 @@ class MailPackResponse(BaseModel):
 class MailPackSendRequest(BaseModel):
     mailing_pack: dict
     recipient_email: str
+
+
+KNOWN_AREA_CENTERS = {
+    ("south africa", "western cape", "cape town", "goodwood"): (-33.9165, 18.5670, "Goodwood, Cape Town, Western Cape"),
+}
+
+
+def _known_center_from_context(
+    country: Optional[str],
+    province: Optional[str],
+    city: Optional[str],
+    suburb: Optional[str],
+) -> Optional[Tuple[float, float, str]]:
+    key = (
+        (country or "").strip().lower(),
+        (province or "").strip().lower(),
+        (city or "").strip().lower(),
+        (suburb or "").strip().lower(),
+    )
+    return KNOWN_AREA_CENTERS.get(key)
 
 
 def _point_in_polygon(lat: float, lon: float, polygon: List[Tuple[float, float]]) -> bool:
@@ -289,10 +301,8 @@ def _cache_file_for_request(request: SearchRequest) -> Path:
         "suburb": request.suburb,
         "street_number": request.street_number,
         "street_name": request.street_name,
-        "postcode": request.postcode,
         "radius_m": request.radius_m,
         "min_roof_sqm": request.min_roof_sqm,
-        "include_residential": request.include_residential,
     }
     key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode("utf-8")).hexdigest()[:20]
     return cache_root / f"search_{key}.json"
@@ -357,26 +367,67 @@ async def search_real_prospects(
                 city=request.city,
                 province=request.province,
                 suburb=request.suburb,
-                postcode=request.postcode or "",
+                postcode="",
                 country=request.country,
             )
             if not geo:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=query_str,
-                    message="Address not found. Check street spelling and try again.",
-                )
+                # Fallback chain so exact mode can still search nearest mapped building
+                # when strict address geocoding is rate-limited or incomplete.
+                fallback_geo = None
+                fallback_queries = [request.suburb, request.city, request.province]
+                for fallback_query in fallback_queries:
+                    if not fallback_query:
+                        continue
+                    fallback_geo = geocode_address(
+                        fallback_query,
+                        city=request.city,
+                        province=request.province,
+                        postcode="",
+                        country=request.country,
+                    )
+                    if fallback_geo:
+                        break
 
-            center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = max(0.15, request.radius_m / 1000.0)
-            search_area = geo.address
+                if not fallback_geo:
+                    known_center = _known_center_from_context(
+                        request.country,
+                        request.province,
+                        request.city,
+                        request.suburb,
+                    )
+                    if not known_center:
+                        return SearchResponse(
+                            results=[],
+                            count=0,
+                            search_area=query_str,
+                            message="Address not found. Check street spelling and try again.",
+                        )
+
+                    center_lat, center_lon, known_label = known_center
+                    radius_km = max(0.15, request.radius_m / 1000.0)
+                    search_area = known_label
+                    exact_match_note = (
+                        "Exact address geocode unavailable. "
+                        "Using known area center to find nearest mapped building on requested street."
+                    )
+                    geo = None
+                else:
+                    geo = fallback_geo
+                    exact_match_note = (
+                        "Exact address geocode unavailable. "
+                        "Using area center to find nearest mapped building on requested street."
+                    )
+
+            if geo is not None:
+                center_lat, center_lon = geo.latitude, geo.longitude
+                radius_km = max(0.15, request.radius_m / 1000.0)
+                search_area = geo.address
         else:
             geo = geocode_address(
                 request.suburb,
                 city=request.city,
                 province=request.province,
-                postcode=request.postcode or "",
+                postcode="",
                 country=request.country,
             )
             if not geo:
@@ -392,12 +443,10 @@ async def search_real_prospects(
             search_area = f"{request.suburb}, {request.city}, {request.province}"
 
         # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
-        # Exact-address mode should include residential so a user's own house can be found.
-        include_residential = bool(request.include_residential or is_exact_address)
+        include_residential = False
 
         logger.info(
-            "Querying Overpass API for %s buildings near %s",
-            "commercial + residential" if include_residential else "commercial",
+            "Querying Overpass API for commercial buildings near %s",
             search_area,
         )
         
@@ -409,8 +458,8 @@ async def search_real_prospects(
             min_lon,
             max_lon,
             include_residential=include_residential,
-            include_all_buildings=is_exact_address,
-            min_polygon_area_sqm=20.0 if is_exact_address else 100.0,
+            include_all_buildings=False,
+            min_polygon_area_sqm=60.0 if is_exact_address else 100.0,
         )
 
         if is_exact_address and not buildings:
@@ -422,9 +471,9 @@ async def search_real_prospects(
                 max_lat,
                 min_lon,
                 max_lon,
-                include_residential=True,
-                include_all_buildings=True,
-                min_polygon_area_sqm=20.0,
+                include_residential=False,
+                include_all_buildings=False,
+                min_polygon_area_sqm=60.0,
             )
 
         if is_exact_address:
@@ -447,27 +496,6 @@ async def search_real_prospects(
 
         if is_exact_address and not target_building:
             target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
-            if not target_building:
-                polygon = geocode_address_polygon(
-                    query_str or "",
-                    city=request.city,
-                    province=request.province,
-                    suburb=request.suburb,
-                    postcode=request.postcode or "",
-                    country=request.country,
-                )
-                if polygon:
-                    roof_area_sqm = max(20.0, calculate_polygon_area(polygon))
-                    target_building = BuildingPolygon(
-                        osm_id=f"nominatim-{hashlib.sha1((query_str or '').encode('utf-8')).hexdigest()[:12]}",
-                        name=None,
-                        building_type="residential",
-                        latitude=sum(p[0] for p in polygon) / len(polygon),
-                        longitude=sum(p[1] for p in polygon) / len(polygon),
-                        roof_area_sqm=roof_area_sqm,
-                        nodes=polygon,
-                    )
-
             if not target_building:
                 nearest_building, nearest_distance_m = _nearest_building_on_requested_street(
                     buildings,
@@ -512,15 +540,12 @@ async def search_real_prospects(
         # Filter by radius and building type
         buildings = filter_nearby_buildings(buildings, center_lat, center_lon, radius_km)
         
-        if request.building_types and not is_exact_address:
-            buildings = [b for b in buildings if b.building_type in request.building_types]
-
         candidates_before_roof_filter = list(buildings)
 
         effective_min_roof_sqm = (
             request.min_roof_sqm
             if request.min_roof_sqm is not None
-            else (40 if is_exact_address else (60 if include_residential else 150))
+            else (60 if is_exact_address else 150)
         )
         buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
 
@@ -570,7 +595,16 @@ async def search_real_prospects(
 
                 # Reverse geocode for full address
                 geo_result = reverse_geocode(building.latitude, building.longitude)
-                address = geo_result.get("address") if geo_result else f"{building.latitude}, {building.longitude}"
+                if geo_result and geo_result.get("address"):
+                    address = geo_result.get("address")
+                elif getattr(building, "street", None):
+                    street_bits = [
+                        getattr(building, "house_number", None),
+                        getattr(building, "street", None),
+                    ]
+                    address = " ".join([bit for bit in street_bits if bit])
+                else:
+                    address = building.name or "Mapped commercial building in selected area"
 
                 is_residential_result = building.building_type == "residential"
                 business_name = None if is_residential_result else building.name

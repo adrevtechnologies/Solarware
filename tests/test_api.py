@@ -26,26 +26,17 @@ class TestSearchAreaEndpoints:
     """Test search area API endpoints."""
 
     def test_list_search_areas(self):
-        """Test listing search areas."""
+        """Legacy route should not be mounted in V1 runtime."""
         response = client.get("/api/search-areas")
-        if response.status_code == 200:
-            assert isinstance(response.json(), list)
-            return
-        assert response.status_code in [500, 503]
+        assert response.status_code == 404
 
     def test_create_search_area(self, test_search_area):
-        """Test creating search area."""
+        """Legacy route should not be mounted in V1 runtime."""
         response = client.post("/api/search-areas", json=test_search_area)
-        # Accept successful creation or DB-unavailable environments
-        if response.status_code in [200, 201]:
-            data = response.json()
-            assert data["name"] == test_search_area["name"]
-            assert data["country"] == test_search_area["country"]
-            return
-        assert response.status_code in [500, 503]
+        assert response.status_code == 404
 
     def test_invalid_coordinates(self):
-        """Test invalid coordinates validation."""
+        """Legacy route should not be mounted in V1 runtime."""
         invalid_area = {
             "name": "Invalid",
             "country": "US",
@@ -56,25 +47,39 @@ class TestSearchAreaEndpoints:
             "min_roof_area_sqft": 5000,
         }
         response = client.post("/api/search-areas", json=invalid_area)
-        # Pydantic body validation now returns 422 before route logic runs.
-        assert response.status_code in [400, 422]
+        assert response.status_code == 404
 
 
 class TestProspectEndpoints:
     """Test prospect API endpoints."""
 
     def test_list_prospects(self):
-        """Test listing prospects."""
+        """Legacy route should not be mounted in V1 runtime."""
         response = client.get("/api/prospects")
-        if response.status_code == 200:
-            assert isinstance(response.json(), list)
-            return
-        assert response.status_code in [500, 503]
+        assert response.status_code == 404
 
     def test_list_prospects_with_filter(self, test_search_area):
-        """Test listing with search area filter."""
+        """Legacy route should not be mounted in V1 runtime."""
         response = client.get(
             "/api/prospects",
             params={"search_area_id": "550e8400-e29b-41d4-a716-446655440000"}
         )
-        assert response.status_code in [200, 500, 503]
+        assert response.status_code == 404
+
+
+class TestV1SearchEndpoints:
+    """Test active V1 real search routes."""
+
+    def test_search_requires_required_context(self):
+        response = client.post(
+            "/api/search",
+            json={
+                "country": "South Africa",
+                "province": "Western Cape",
+                "city": "Cape Town",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["count"] == 0
+        assert "required" in payload["message"].lower()

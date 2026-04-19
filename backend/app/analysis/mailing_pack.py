@@ -32,40 +32,25 @@ Solarware
 """
 
     @staticmethod
-    def _opportunity_tier(suitability_score: int) -> str:
-        if suitability_score >= 80:
-            return "High"
-        if suitability_score >= 60:
-            return "Medium"
-        return "Early-stage"
-
-    @staticmethod
-    def generate_outreach_content(prospect: Dict, suitability_score: int) -> Dict[str, str]:
-        """Create concise multi-channel outreach copy for the same lead."""
+    def generate_outreach_content(prospect: Dict) -> Dict[str, str]:
+        """Create the V1 outreach copy from core prospect facts."""
         business_name = prospect.get("business_name") or "your business"
         address = prospect.get("address") or "your property"
-        roof_area_sqm = float(prospect.get("roof_area_sqm") or 0)
-        roof_area_sqft = int(round(roof_area_sqm * 10.7639))
-        tier = MailingPackGenerator._opportunity_tier(suitability_score)
+        recipient_name = prospect.get("contact_name") or "there"
+        panel_count = int(prospect.get("estimated_panel_count") or 0)
 
         cold_email = (
-            f"Subject: Rooftop solar opportunity for {business_name}\n\n"
-            f"Hi there,\n\n"
-            f"We reviewed {address} and found rooftop conditions consistent with a {tier.lower()}-priority solar lead. "
-            f"The roof footprint (~{roof_area_sqft:,} sqft) appears suitable for a commercial layout and staged rollout.\n\n"
-            f"If useful, we can share a short feasibility walkthrough and before/after roof concept this week.\n\n"
-            f"Best,\nSolarware Team"
+            f"Subject: Solar Savings Opportunity for {business_name}\n\n"
+            f"Hi {recipient_name},\n\n"
+            f"We identified your property at {address} as a strong candidate for rooftop solar.\n\n"
+            f"Based on available roof area, your site may support approximately {panel_count} panels with meaningful annual electricity savings.\n\n"
+            f"We prepared a visual concept for your property.\n\n"
+            f"Would you be open to a short discussion?\n\n"
+            f"Regards,\nSolarware"
         )
 
-        whatsapp_intro = (
-            f"Hi, we assessed {address} for commercial rooftop solar. "
-            f"It scores {suitability_score}/100 ({tier} tier) and looks suitable for a short feasibility call. "
-            f"Can I share the roof concept image?"
-        )
-
-        follow_up_text = (
-            f"Quick follow-up on {business_name}: we have your rooftop concept ready and can walk through practical next steps in 15 minutes."
-        )
+        whatsapp_intro = f"Solar opportunity identified for {address}. Can I share the roof concept?"
+        follow_up_text = f"Following up on rooftop solar for {business_name} at {address}."
 
         return {
             "cold_email": cold_email,
@@ -102,9 +87,6 @@ Solarware
             contact = contact or {}
             recipient_name = contact.get("contact_name") or "there"
 
-            suitability_score = int(prospect.get("solar_score") or 0)
-            opportunity_tier = MailingPackGenerator._opportunity_tier(suitability_score)
-
             email_subject = f"Solar Savings Opportunity for {prospect.get('business_name') or 'Your Property'}"
 
             # Render email
@@ -139,8 +121,10 @@ Solarware
             )
             
             outreach_content = MailingPackGenerator.generate_outreach_content(
-                prospect=prospect,
-                suitability_score=suitability_score,
+                prospect={
+                    **prospect,
+                    "contact_name": recipient_name,
+                },
             )
 
             # Create manifest
@@ -159,8 +143,6 @@ Solarware
                 "mockup_image_path": mockup_image_path,
                 "before_after_image_path": before_after_image_path,
                 "system_capacity_kw": prospect.get("estimated_system_capacity_kw"),
-                "suitability_score": suitability_score,
-                "opportunity_tier": opportunity_tier,
                 "outreach": outreach_content,
                 "created_at": datetime.utcnow().isoformat(),
                 "status": "prepared",

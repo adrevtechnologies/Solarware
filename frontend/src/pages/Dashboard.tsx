@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { MailPack, Prospect } from '../types';
 import { SearchPanel, SearchParams } from '../components/SearchPanel';
-import { ResultsTable } from '../components/ResultsTable';
+import { ResultsSort, ResultsTable } from '../components/ResultsTable';
 import { ProposalModal } from '../components/ProposalModal';
 import { MailPackModal } from '../components/MailPackModal';
 import { api } from '../services/api';
@@ -14,8 +14,8 @@ export const Dashboard: React.FC = () => {
     province: 'Western Cape',
     city: 'Cape Town',
     area: 'Goodwood',
-    minRoofSqm: 150,
   });
+  const [sortBy, setSortBy] = useState<ResultsSort>('largest_roof');
 
   const [results, setResults] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(false);
@@ -104,10 +104,7 @@ export const Dashboard: React.FC = () => {
         suburb: searchParams.area,
         street_number: streetParts.street_number,
         street_name: streetParts.street_name,
-        postcode: searchParams.postalCode,
         radius_m: isExactMode ? 300 : 1500,
-        include_residential: isExactMode,
-        min_roof_sqm: isExactMode ? 40 : searchParams.minRoofSqm || 150,
       };
 
       console.info('[Solarware] search:start', {
@@ -248,6 +245,8 @@ export const Dashboard: React.FC = () => {
             <ResultsTable
               prospects={results}
               loading={loading}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
               noResultsMessage={
                 hasStreetQuery
                   ? 'No targetable mapped roof found for this exact street address.'

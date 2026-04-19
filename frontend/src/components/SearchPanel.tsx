@@ -7,8 +7,6 @@ export interface SearchParams {
   city: string;
   area: string;
   street?: string;
-  postalCode?: string;
-  minRoofSqm?: number;
 }
 
 interface SearchPanelProps {
@@ -29,14 +27,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
   const updateParam = (key: keyof SearchParams, value: string) => {
     onParamsChange({ ...params, [key]: value });
-  };
-
-  const updateNumber = (key: keyof SearchParams, value: string) => {
-    const parsed = Number(value);
-    onParamsChange({
-      ...params,
-      [key]: Number.isNaN(parsed) ? undefined : parsed,
-    });
   };
 
   const canSearch =
@@ -133,34 +123,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           onChange={(e) => updateParam('street', e.target.value)}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
         />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="block text-sm font-semibold text-slate-200 mb-2">Postal Code</label>
-          <input
-            type="text"
-            placeholder="7460"
-            value={params.postalCode || ''}
-            onChange={(e) => updateParam('postalCode', e.target.value)}
-            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-slate-200 mb-2">
-            Minimum Roof (sqm)
-          </label>
-          <input
-            type="number"
-            min={50}
-            step={10}
-            placeholder="150"
-            value={params.minRoofSqm || ''}
-            onChange={(e) => updateNumber('minRoofSqm', e.target.value)}
-            className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
-          />
-        </div>
       </div>
 
       <button

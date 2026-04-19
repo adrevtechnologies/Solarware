@@ -1,11 +1,15 @@
 import React from 'react';
 import { Prospect } from '../types';
 
+export type ResultsSort = 'largest_roof' | 'most_panels';
+
 interface ResultsTableProps {
   prospects: Prospect[];
   loading: boolean;
   noResultsMessage?: string;
   generatingPackId?: string | null;
+  sortBy: ResultsSort;
+  onSortChange: (sort: ResultsSort) => void;
   onViewImage?: (prospect: Prospect) => void;
   onGenerateMailPack?: (prospect: Prospect) => void;
 }
@@ -15,10 +19,17 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   loading,
   noResultsMessage = 'No viable commercial roofs found for this search.',
   generatingPackId,
+  sortBy,
+  onSortChange,
   onViewImage,
   onGenerateMailPack,
 }) => {
-  const sortedProspects = [...prospects].sort((a, b) => b.roof_area_sqm - a.roof_area_sqm);
+  const sortedProspects = [...prospects].sort((a, b) => {
+    if (sortBy === 'most_panels') {
+      return b.estimated_panel_count - a.estimated_panel_count;
+    }
+    return b.roof_area_sqm - a.roof_area_sqm;
+  });
 
   if (loading) {
     return (
@@ -46,9 +57,15 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Sort
           </label>
-          <span className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100">
-            Largest Roof - Smallest Roof
-          </span>
+          <select
+            title="Sort results"
+            value={sortBy}
+            onChange={(e) => onSortChange(e.target.value as ResultsSort)}
+            className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100"
+          >
+            <option value="largest_roof">Largest Roof</option>
+            <option value="most_panels">Most Panels</option>
+          </select>
         </div>
       </div>
 

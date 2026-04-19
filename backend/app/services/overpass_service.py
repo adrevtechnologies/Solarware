@@ -156,11 +156,10 @@ def query_commercial_buildings(
         query = f"""
         [bbox:{bbox_str}];
         (
-            way["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+            way["building"~"warehouse|retail|factory|office|school|church|hospital|farm|farm_auxiliary|barn|supermarket|industrial|commercial|mall"];
             way["building:use"~"commercial|industrial|retail|office|warehouse|mall|business_park"];
             way["office"];
-            way["landuse"~"industrial|commercial"];
-            relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm_auxiliary|supermarket|industrial|commercial|mall"];
+            relation["building"~"warehouse|retail|factory|office|school|church|hospital|farm|farm_auxiliary|barn|supermarket|industrial|commercial|mall"];
             {residential_clause}
         );
         out geom;
@@ -196,15 +195,18 @@ def query_commercial_buildings(
             building_type = tags.get("building", "unknown")
             shop_type = tags.get("shop")
             use_type = tags.get("building:use")
+            office_tag = tags.get("office")
 
             # Determine commercial category
             if building_type in ["warehouse", "factory", "industrial"]:
                 category = building_type
             elif building_type == "retail" or shop_type:
                 category = "retail"
-            elif building_type in ["office"]:
+            elif building_type in ["office"] or office_tag:
                 category = "office"
             elif building_type in ["commercial", "mall"]:
+                category = "business_park"
+            elif use_type == "business_park":
                 category = "business_park"
             elif building_type == "school":
                 category = "school"
@@ -212,6 +214,8 @@ def query_commercial_buildings(
                 category = "church"
             elif building_type == "hospital":
                 category = "hospital"
+            elif building_type in ["farm", "farm_auxiliary", "barn"]:
+                category = "farm_building"
             elif shop_type:
                 category = "retail"
             else:
@@ -220,12 +224,28 @@ def query_commercial_buildings(
             if building_type in ["house", "residential", "detached", "semidetached_house", "terrace", "apartments"]:
                 category = "residential"
 
-            # For commercial mode, reject residential and small utility structures.
-            if not include_residential and not include_all_buildings and category in ["residential", "house", "hut", "garage", "shed", ""]:
+            excluded_categories = {
+                "residential",
+                "house",
+                "hut",
+                "cabin",
+                "shack",
+                "garage",
+                "garages",
+                "shed",
+                "service",
+                "toilets",
+                "yes",
+                "no",
+                "",
+            }
+
+            # For commercial mode, reject residential and utility structures.
+            if not include_residential and not include_all_buildings and category in excluded_categories:
                 continue
 
             # Even residential mode should still skip utility/non-target structures.
-            if include_residential and category in ["hut", "garage", "shed", ""]:
+            if include_residential and category in excluded_categories:
                 continue
 
             # Extract polygon nodes
