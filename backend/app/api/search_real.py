@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Tuple
 from ..services.nominatim_service import (
     geocode_address,
+    geocode_address_google,
     reverse_geocode,
     get_bounding_box,
 )
@@ -280,7 +281,7 @@ def _find_exact_building_by_reverse_address(
         key=lambda item: item[0],
     )
 
-    for distance_m, building in scored[:25]:
+    for distance_m, building in scored[:80]:
         rg = reverse_geocode(building.latitude, building.longitude) or {}
         if _exact_address_match(
             rg.get("street"),
@@ -422,6 +423,29 @@ async def search_real_prospects(
                 postcode="",
                 country=request.country,
             )
+
+            # Prefer house-level geocoding when Google Maps key is configured.
+            google_geo = geocode_address_google(
+                query_str,
+                city=request.city,
+                province=request.province,
+                suburb=request.suburb,
+                postcode="",
+                country=request.country,
+            )
+            if google_geo:
+                # Use Google result when Nominatim misses house-number precision.
+                if not geo or not _exact_address_match(
+                    geo.street,
+                    geo.house_number,
+                    request.street_name,
+                    request.street_number,
+                ):
+                    geo = google_geo
+                    exact_match_note = (
+                        f"Matched exact address {request.street_number or ''} {request.street_name} via Google geocoder."
+                    )
+
             if not geo:
                 return SearchResponse(
                     results=[],
@@ -434,6 +458,25 @@ async def search_real_prospects(
                 center_lat, center_lon = geo.latitude, geo.longitude
                 radius_km = max(0.15, request.radius_m / 1000.0)
                 search_area = geo.address
+
+                # When geocoder resolves only street-level (no house-number precision),
+                # expand strict search area but still return only exact-address match.
+                if request.street_number and not _exact_address_match(
+                    geo.street,
+                    geo.house_number,
+                    request.street_name,
+                    request.street_number,
+                ):
+                    area_geo_for_exact = geocode_address(
+                        request.suburb,
+                        city=request.city,
+                        province=request.province,
+                        postcode="",
+                        country=request.country,
+                    )
+                    if area_geo_for_exact:
+                        center_lat, center_lon = area_geo_for_exact.latitude, area_geo_for_exact.longitude
+                    radius_km = max(1.8, radius_km)
 
             # If geocoder returns only a street-level point, try exact addr tags from Overpass.
             if request.street_number and request.street_name:
