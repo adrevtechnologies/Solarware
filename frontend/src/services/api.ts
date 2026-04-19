@@ -32,6 +32,9 @@ export const api = {
 
   suggestAreas: (payload: { country?: string; province?: string; city?: string; query?: string }) =>
     apiClient.post<{ areas: string[] }>('/api/areas/suggest', payload),
+
+  suggestCities: (payload: { country?: string; province?: string; query?: string }) =>
+    apiClient.post<{ cities: string[] }>('/api/cities/suggest', payload),
 };
 
 export default apiClient;

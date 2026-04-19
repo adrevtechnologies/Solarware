@@ -1,5 +1,5 @@
 import React from 'react';
-import { CITIES_BY_PROVINCE, COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
+import { COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
 
 export interface SearchParams {
   country: string;
@@ -12,6 +12,8 @@ export interface SearchParams {
 interface SearchPanelProps {
   params: SearchParams;
   onParamsChange: (params: SearchParams) => void;
+  cityOptions: string[];
+  onCityQueryChange: (query: string) => void;
   areaOptions: string[];
   onAreaQueryChange: (query: string) => void;
   onSearch: () => void;
@@ -21,13 +23,14 @@ interface SearchPanelProps {
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
   onParamsChange,
+  cityOptions,
+  onCityQueryChange,
   areaOptions,
   onAreaQueryChange,
   onSearch,
   loading,
 }) => {
   const provinceOptions = PROVINCES_BY_COUNTRY[params.country] || [];
-  const cityOptions = CITIES_BY_PROVINCE[params.province] || [];
 
   const updateParam = (key: keyof SearchParams, value: string) => {
     onParamsChange({ ...params, [key]: value });
@@ -41,6 +44,10 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
   const normalizedAreaOptions = Array.from(
     new Set([...areaOptions, ...(params.area ? [params.area] : [])])
+  ).filter(Boolean);
+
+  const normalizedCityOptions = Array.from(
+    new Set([...cityOptions, ...(params.city ? [params.city] : [])])
   ).filter(Boolean);
 
   return (
@@ -58,8 +65,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           onChange={(e) => {
             const country = e.target.value;
             const firstProvince = (PROVINCES_BY_COUNTRY[country] || [])[0] || '';
-            const firstCity = (CITIES_BY_PROVINCE[firstProvince] || [])[0] || '';
-            onParamsChange({ ...params, country, province: firstProvince, city: firstCity });
+            onParamsChange({ ...params, country, province: firstProvince, city: '', area: '' });
           }}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
         >
@@ -78,8 +84,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           value={params.province}
           onChange={(e) => {
             const province = e.target.value;
-            const firstCity = (CITIES_BY_PROVINCE[province] || [])[0] || '';
-            onParamsChange({ ...params, province, city: firstCity });
+            onParamsChange({ ...params, province, city: '', area: '' });
           }}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
         >
@@ -93,45 +98,37 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
       <div>
         <label className="block text-sm font-semibold text-slate-200 mb-2">City</label>
-        <select
+        <input
+          type="text"
+          list="city-suggestions"
           title="City"
+          placeholder="Type city, e.g. Cape Town"
           value={params.city}
-          onChange={(e) => updateParam('city', e.target.value)}
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
-        >
-          {cityOptions.map((city) => (
-            <option key={city} value={city}>
-              {city}
-            </option>
+          onChange={(e) => onCityQueryChange(e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+        />
+        <datalist id="city-suggestions">
+          {normalizedCityOptions.map((city) => (
+            <option key={city} value={city} />
           ))}
-        </select>
+        </datalist>
       </div>
 
       <div>
         <label className="block text-sm font-semibold text-slate-200 mb-2">Area Search</label>
         <input
           type="text"
+          list="area-suggestions"
           placeholder="Type area, e.g. Parow"
           value={params.area}
           onChange={(e) => onAreaQueryChange(e.target.value)}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
         />
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-200 mb-2">Area / Suburb</label>
-        <select
-          title="Area / Suburb"
-          value={params.area}
-          onChange={(e) => updateParam('area', e.target.value)}
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
-        >
+        <datalist id="area-suggestions">
           {normalizedAreaOptions.map((area) => (
-            <option key={area} value={area}>
-              {area}
-            </option>
+            <option key={area} value={area} />
           ))}
-        </select>
+        </datalist>
       </div>
 
       <div>

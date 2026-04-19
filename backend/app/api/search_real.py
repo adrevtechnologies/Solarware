@@ -14,6 +14,7 @@ from ..services.nominatim_service import (
     geocode_address,
     geocode_address_google,
     suggest_areas_google,
+    suggest_cities_google,
     reverse_geocode,
     get_bounding_box,
 )
@@ -114,6 +115,16 @@ class AreaSuggestRequest(BaseModel):
 
 class AreaSuggestResponse(BaseModel):
     areas: List[str]
+
+
+class CitySuggestRequest(BaseModel):
+    country: Optional[str] = "South Africa"
+    province: Optional[str] = None
+    query: Optional[str] = None
+
+
+class CitySuggestResponse(BaseModel):
+    cities: List[str]
 
 
 KNOWN_AREA_CENTERS = {
@@ -446,6 +457,18 @@ async def suggest_areas(request: AreaSuggestRequest) -> AreaSuggestResponse:
         limit=12,
     )
     return AreaSuggestResponse(areas=areas)
+
+
+@router.post("/cities/suggest", response_model=CitySuggestResponse)
+async def suggest_cities(request: CitySuggestRequest) -> CitySuggestResponse:
+    """Suggest city names for dropdown/typeahead usage."""
+    cities = suggest_cities_google(
+        query=request.query or "",
+        province=request.province or "",
+        country=request.country or "South Africa",
+        limit=12,
+    )
+    return CitySuggestResponse(cities=cities)
 
 
 @router.post("/search")

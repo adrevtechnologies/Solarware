@@ -22,6 +22,7 @@ export const Dashboard: React.FC = () => {
   const [searchMessage, setSearchMessage] = useState('');
   const [warmingBackend, setWarmingBackend] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
   const [areaOptions, setAreaOptions] = useState<string[]>([]);
 
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
@@ -102,6 +103,31 @@ export const Dashboard: React.FC = () => {
     },
     [searchParams.country, searchParams.province, searchParams.city]
   );
+
+  const loadCitySuggestions = useCallback(
+    async (query: string) => {
+      try {
+        const response = await api.suggestCities({
+          country: searchParams.country,
+          province: searchParams.province,
+          query,
+        });
+        const values = response.data.cities || [];
+        setCityOptions(values);
+      } catch (error) {
+        console.warn('[Solarware] city:suggest:error', error);
+      }
+    },
+    [searchParams.country, searchParams.province]
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadCitySuggestions(searchParams.city || '');
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchParams.city, searchParams.province, searchParams.country, loadCitySuggestions]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -280,14 +306,16 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1f2937_0%,_#0f172a_55%,_#020617_100%)] text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:py-10">
-        <header className="mb-8 rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
-          <div className="flex items-center gap-4">
+        <header className="mb-8 rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <img
               src="/logo.png"
               alt="Solarware logo"
-              className="h-14 w-14 rounded-lg border border-slate-500 bg-slate-950/60 object-contain p-1.5"
+              className="h-24 w-auto rounded-lg border border-slate-500 bg-slate-950/40 object-contain sm:h-28"
             />
-            <h1 className="text-3xl font-bold tracking-tight">Solarware</h1>
+            <p className="text-lg font-bold tracking-tight text-emerald-300 sm:text-xl">
+              Own every viable roof in your market before your competitors do.
+            </p>
           </div>
         </header>
 
@@ -296,8 +324,13 @@ export const Dashboard: React.FC = () => {
             <SearchPanel
               params={searchParams}
               onParamsChange={setSearchParams}
+              cityOptions={cityOptions}
+              onCityQueryChange={(q) => {
+                setSearchParams((prev) => ({ ...prev, city: q }));
+              }}
               areaOptions={areaOptions}
               onAreaQueryChange={(q) => {
+                setSearchParams((prev) => ({ ...prev, area: q }));
                 void loadAreaSuggestions(q);
               }}
               onSearch={handleSearch}

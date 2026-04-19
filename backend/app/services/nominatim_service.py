@@ -225,6 +225,76 @@ def suggest_areas_google(
         return []
 
 
+def suggest_cities_google(
+    query: str,
+    province: str = "",
+    country: str = "South Africa",
+    limit: int = 8,
+) -> List[str]:
+    """Suggest city names using Google Places Autocomplete when API key is configured."""
+    settings = get_settings()
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return []
+
+    seed = (query or "").strip()
+    if not seed:
+        seed = province or country or "South Africa"
+
+    country_norm = (country or "").strip().lower()
+    country_component = "country:za" if "south africa" in country_norm else ""
+
+    try:
+        params = {
+            "input": seed,
+            "types": "(cities)",
+            "key": api_key,
+            "language": "en",
+        }
+        if country_component:
+            params["components"] = country_component
+
+        response = requests.get(
+            "https://maps.googleapis.com/maps/api/place/autocomplete/json",
+            params=params,
+            headers=HEADERS,
+            timeout=6,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") not in {"OK", "ZERO_RESULTS"}:
+            return []
+
+        results: List[str] = []
+        seen = set()
+        province_norm = (province or "").strip().lower()
+
+        for pred in payload.get("predictions", []):
+            text = (pred.get("description") or "").strip()
+            if not text:
+                continue
+
+            parts = [p.strip() for p in text.split(",") if p.strip()]
+            city_name = parts[0] if parts else text
+
+            lowered = text.lower()
+            if province_norm and province_norm not in lowered:
+                continue
+
+            key = city_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(city_name)
+            if len(results) >= max(1, limit):
+                break
+
+        return results
+    except Exception as e:
+        logger.warning(f"Google city suggestion error for '{seed}': {e}")
+        return []
+
+
 def geocode_address_polygon(
     address: str,
     city: str = "",
