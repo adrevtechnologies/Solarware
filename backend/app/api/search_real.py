@@ -407,6 +407,7 @@ async def search_real_prospects(
     try:
         query_str: Optional[str] = None
         exact_match_note: Optional[str] = None
+        geocode_is_house_precise = False
 
         # STEP 1: Validate required context fields for V1.
         if not request.country or not request.province or not request.city or not request.suburb:
@@ -466,6 +467,16 @@ async def search_real_prospects(
                     exact_match_note = (
                         f"Matched exact address {request.street_number or ''} {request.street_name} via Google geocoder."
                     )
+
+            geocode_is_house_precise = bool(
+                geo
+                and _exact_address_match(
+                    geo.street,
+                    geo.house_number,
+                    request.street_name,
+                    request.street_number,
+                )
+            )
 
             if not geo:
                 return SearchResponse(
@@ -596,7 +607,15 @@ async def search_real_prospects(
                 )
 
         if is_exact_address and not target_building:
-            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=45.0)
+            # Only trust nearest-footprint selection when geocoder is house-number precise.
+            if geocode_is_house_precise:
+                target_building = _select_exact_target_building(
+                    buildings,
+                    center_lat,
+                    center_lon,
+                    max_distance_m=35.0,
+                )
+
             if not target_building:
                 reverse_match_building, reverse_match_distance_m = _find_exact_building_by_reverse_address(
                     buildings,
@@ -611,13 +630,14 @@ async def search_real_prospects(
                         f"Matched exact address {request.street_number or ''} {request.street_name} "
                         f"via reverse-geocoded building footprint ({reverse_match_distance_m:.0f}m from geocode point)."
                     )
-                else:
-                    return SearchResponse(
-                        results=[],
-                        count=0,
-                        search_area=search_area,
-                        message="No building footprint found for exact address.",
-                    )
+
+            if not target_building:
+                return SearchResponse(
+                    results=[],
+                    count=0,
+                    search_area=search_area,
+                    message="No building footprint found for exact address.",
+                )
             buildings = [target_building]
         
         if not buildings:
