@@ -119,7 +119,7 @@ export const Dashboard: React.FC = () => {
       const ready = await ensureBackendReady();
       if (!ready) {
         setResults([]);
-        setSearchMessage('Backend is still waking up. Please click Search again in a few seconds.');
+        setSearchMessage('Service temporarily unavailable. Please retry.');
         return;
       }
 
@@ -133,11 +133,37 @@ export const Dashboard: React.FC = () => {
       }
 
       const isExactMode = !!streetParts.street_number && !!streetParts.street_name;
+      let resolvedArea = searchParams.area;
+
+      if (!isExactMode) {
+        const inCurrentOptions = areaOptions.some(
+          (a) => a.trim().toLowerCase() === (searchParams.area || '').trim().toLowerCase()
+        );
+        if (!inCurrentOptions) {
+          try {
+            const areaSuggest = await api.suggestAreas({
+              country: searchParams.country,
+              province: searchParams.province,
+              city: searchParams.city,
+              query: searchParams.area,
+            });
+            const suggested = areaSuggest.data.areas || [];
+            if (suggested.length > 0) {
+              resolvedArea = suggested[0];
+              setSearchParams((prev) => ({ ...prev, area: suggested[0] }));
+              setAreaOptions(suggested);
+            }
+          } catch (error) {
+            console.warn('[Solarware] area:suggest:search_fallback_error', error);
+          }
+        }
+      }
+
       const payload = {
         country: searchParams.country,
         province: searchParams.province,
         city: searchParams.city,
-        suburb: searchParams.area,
+        suburb: resolvedArea,
         street_number: streetParts.street_number,
         street_name: streetParts.street_name,
         radius_m: isExactMode ? 300 : 1500,

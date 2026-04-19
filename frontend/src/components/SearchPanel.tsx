@@ -39,6 +39,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     !!params.city.trim() &&
     !!params.area.trim();
 
+  const normalizedAreaOptions = Array.from(new Set([
+    ...areaOptions,
+    ...(params.area ? [params.area] : []),
+  ])).filter(Boolean);
+
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-4">
       <div>
@@ -104,23 +109,30 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       </div>
 
       <div>
-        <label className="block text-sm font-semibold text-slate-200 mb-2">Area / Suburb</label>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Area Search</label>
         <input
           type="text"
-          placeholder="Goodwood"
-          list="area-suggestions"
+          placeholder="Type area, e.g. Parow"
           value={params.area}
-          onChange={(e) => {
-            updateParam('area', e.target.value);
-            onAreaQueryChange(e.target.value);
-          }}
+          onChange={(e) => onAreaQueryChange(e.target.value)}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
         />
-        <datalist id="area-suggestions">
-          {areaOptions.map((area) => (
-            <option key={area} value={area} />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">Area / Suburb</label>
+        <select
+          title="Area / Suburb"
+          value={params.area}
+          onChange={(e) => updateParam('area', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+        >
+          {normalizedAreaOptions.map((area) => (
+            <option key={area} value={area}>
+              {area}
+            </option>
           ))}
-        </datalist>
+        </select>
       </div>
 
       <div>
