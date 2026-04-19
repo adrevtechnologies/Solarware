@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Database
-    DATABASE_URL: str = "sqlite:///./test_solarware.db"
+    DATABASE_URL: str = "sqlite:///./solarware.db"
     DATABASE_ECHO: bool = False
 
     # CORS

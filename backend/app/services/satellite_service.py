@@ -165,13 +165,3 @@ def draw_panel_overlay(
     # Frontend will add canvas overlay with rectangles
     return image_url
 
-
-def test_satellite_url(latitude: float, longitude: float) -> bool:
-    """Test if satellite image URL is accessible"""
-    import requests
-    try:
-        url = get_satellite_image_url(latitude, longitude)
-        response = requests.head(url, timeout=5)
-        return response.status_code == 200
-    except:
-        return False
