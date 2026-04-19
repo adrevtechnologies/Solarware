@@ -13,7 +13,7 @@ export const Dashboard: React.FC = () => {
     country: 'South Africa',
     province: 'Western Cape',
     city: 'Cape Town',
-    area: 'Goodwood',
+    area: '',
   });
   const [sortBy, setSortBy] = useState<ResultsSort>('largest_roof');
 
@@ -313,7 +313,9 @@ export const Dashboard: React.FC = () => {
                 <p className="mt-1 text-sm text-slate-400">
                   {searchParams.street?.trim()
                     ? 'Exact address mode active.'
-                    : `Area mode active for ${searchParams.area}, ${searchParams.city}.`}
+                    : searchParams.area
+                      ? `Area mode active for ${searchParams.area}, ${searchParams.city}.`
+                      : 'Area mode active. Select an area to run search.'}
                 </p>
               )}
             </div>

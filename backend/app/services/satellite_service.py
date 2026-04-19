@@ -82,11 +82,24 @@ def get_satellite_image_url_for_polygon(
     settings = get_settings()
     google_api_key = settings.GOOGLE_MAPS_API_KEY
     if google_api_key:
-        center_lat, center_lon = _centroid_from_polygon(nodes)
+        min_lat, max_lat, min_lon, max_lon = _bbox_from_polygon(nodes, padding_ratio=padding_ratio)
+
+        lat_span = max_lat - min_lat
+        lon_span = max_lon - min_lon
+        if lon_span > (lat_span * 1.35):
+            width, height = 900, 560
+        elif lat_span > (lon_span * 1.35):
+            width, height = 560, 900
+        else:
+            width, height = 700, 700
+
+        visible = (
+            f"{min_lat},{min_lon}|"
+            f"{max_lat},{max_lon}"
+        )
         return (
             f"https://maps.googleapis.com/maps/api/staticmap?"
-            f"center={center_lat},{center_lon}"
-            f"&zoom=21"
+            f"visible={visible}"
             f"&size={width}x{height}"
             f"&maptype=satellite"
             f"&style=feature:all|element:labels|visibility:off"

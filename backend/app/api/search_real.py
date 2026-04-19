@@ -635,23 +635,47 @@ async def search_real_prospects(
                     country=request.country,
                 )
             if not geo:
-                known_center = _known_center_from_context(
-                    request.country,
-                    request.province,
+                # Fallback to city-level geocode so area search is not locked to hardcoded centers.
+                city_geo = geocode_address(
                     request.city,
-                    request.suburb,
+                    city=request.city,
+                    province=request.province,
+                    postcode="",
+                    country=request.country,
                 )
-                if not known_center:
-                    return SearchResponse(
-                        results=[],
-                        count=0,
-                        search_area=request.suburb,
-                        message="Area not found. Check spelling and try again.",
+                if not city_geo:
+                    city_geo = geocode_address_google(
+                        request.city,
+                        city=request.city,
+                        province=request.province,
+                        suburb=request.suburb,
+                        postcode="",
+                        country=request.country,
                     )
-                center_lat, center_lon, known_label = known_center
-                radius_km = max(0.5, request.radius_m / 1000.0)
-                search_area = known_label
-                geo = None
+
+                if city_geo is not None:
+                    center_lat, center_lon = city_geo.latitude, city_geo.longitude
+                    radius_km = max(1.5, request.radius_m / 1000.0)
+                    search_area = f"{request.suburb}, {request.city}, {request.province}"
+                    geo = None
+                else:
+                    known_center = _known_center_from_context(
+                        request.country,
+                        request.province,
+                        request.city,
+                        request.suburb,
+                    )
+                    if not known_center:
+                        return SearchResponse(
+                            results=[],
+                            count=0,
+                            search_area=request.suburb,
+                            message="Area not found. Check spelling and try again.",
+                        )
+                    center_lat, center_lon, known_label = known_center
+                    radius_km = max(0.5, request.radius_m / 1000.0)
+                    search_area = known_label
+                    geo = None
 
             if geo is not None:
                 center_lat, center_lon = geo.latitude, geo.longitude
@@ -733,6 +757,20 @@ async def search_real_prospects(
                     exact_match_note = (
                         f"Matched exact address {request.street_number or ''} {request.street_name} "
                         f"via reverse-geocoded building footprint ({reverse_match_distance_m:.0f}m from geocode point)."
+                    )
+
+            if not target_building:
+                street_candidate, street_distance_m = _nearest_building_on_requested_street(
+                    buildings,
+                    center_lat,
+                    center_lon,
+                    request.street_name,
+                )
+                if street_candidate and street_distance_m <= 120.0:
+                    target_building = street_candidate
+                    exact_match_note = (
+                        f"Matched nearest mapped footprint on {request.street_name} "
+                        f"({street_distance_m:.0f}m from exact geocode point)."
                     )
 
             if not target_building:
