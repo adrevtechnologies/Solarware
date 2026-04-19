@@ -30,12 +30,8 @@ export const api = {
 
   healthCheck: () => apiClient.get('/health'),
 
-  suggestAreas: (payload: {
-    country?: string;
-    province?: string;
-    city?: string;
-    query?: string;
-  }) => apiClient.post<{ areas: string[] }>('/api/areas/suggest', payload),
+  suggestAreas: (payload: { country?: string; province?: string; city?: string; query?: string }) =>
+    apiClient.post<{ areas: string[] }>('/api/areas/suggest', payload),
 };
 
 export default apiClient;

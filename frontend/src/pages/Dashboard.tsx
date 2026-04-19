@@ -109,7 +109,13 @@ export const Dashboard: React.FC = () => {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [searchParams.area, searchParams.city, searchParams.province, searchParams.country, loadAreaSuggestions]);
+  }, [
+    searchParams.area,
+    searchParams.city,
+    searchParams.province,
+    searchParams.country,
+    loadAreaSuggestions,
+  ]);
 
   const handleSearch = async () => {
     setLoading(true);

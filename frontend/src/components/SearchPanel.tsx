@@ -39,10 +39,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     !!params.city.trim() &&
     !!params.area.trim();
 
-  const normalizedAreaOptions = Array.from(new Set([
-    ...areaOptions,
-    ...(params.area ? [params.area] : []),
-  ])).filter(Boolean);
+  const normalizedAreaOptions = Array.from(
+    new Set([...areaOptions, ...(params.area ? [params.area] : [])])
+  ).filter(Boolean);
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-4">
