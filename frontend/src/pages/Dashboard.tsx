@@ -31,6 +31,28 @@ export const Dashboard: React.FC = () => {
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  const hasStreetQuery = !!searchParams.street?.trim();
+
+  const splitStreetInput = (
+    street?: string
+  ): { street_number?: string; street_name?: string; hasPartial: boolean } => {
+    const raw = (street || '').trim();
+    if (!raw) {
+      return { street_number: undefined, street_name: undefined, hasPartial: false };
+    }
+
+    const match = raw.match(/^(\d+[a-zA-Z]?)\s+(.+)$/);
+    if (!match) {
+      return { street_number: undefined, street_name: undefined, hasPartial: true };
+    }
+
+    return {
+      street_number: match[1].trim(),
+      street_name: match[2].trim(),
+      hasPartial: false,
+    };
+  };
+
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const ensureBackendReady = useCallback(async (): Promise<boolean> => {
@@ -75,16 +97,28 @@ export const Dashboard: React.FC = () => {
         return;
       }
 
+      const streetParts = splitStreetInput(searchParams.street);
+      if (streetParts.hasPartial) {
+        setResults([]);
+        setSearchMessage(
+          'Enter full street address as "98 Richmond Street" for exact search, or leave it blank for area search.'
+        );
+        return;
+      }
+
+      const isExactMode = !!streetParts.street_number && !!streetParts.street_name;
       const payload = {
         country: searchParams.country,
         province: searchParams.province,
         city: searchParams.city,
         suburb: searchParams.area,
-        radius_m: 1500,
+        street_number: streetParts.street_number,
+        street_name: streetParts.street_name,
+        radius_m: isExactMode ? 300 : 1500,
       };
 
       console.info('[Solarware] search:start', {
-        mode: 'area',
+        mode: isExactMode ? 'address' : 'area',
         suburb: payload.suburb,
         city: payload.city,
         province: payload.province,
@@ -101,7 +135,7 @@ export const Dashboard: React.FC = () => {
       const exactCount = response.data.count ?? (response.data.results || []).length;
 
       console.info('[Solarware] search:done', {
-        mode: 'area',
+        mode: isExactMode ? 'address' : 'area',
         count: exactCount,
         message: response.data.message,
       });
@@ -211,7 +245,9 @@ export const Dashboard: React.FC = () => {
               {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
               {!searchMessage && (
                 <p className="mt-1 text-sm text-slate-400">
-                  {`Area mode active for ${searchParams.area}, ${searchParams.city}.`}
+                  {searchParams.street?.trim()
+                    ? 'Exact address mode active.'
+                    : `Area mode active for ${searchParams.area}, ${searchParams.city}.`}
                 </p>
               )}
             </div>
@@ -221,7 +257,11 @@ export const Dashboard: React.FC = () => {
               loading={loading}
               sortBy={sortBy}
               onSortChange={setSortBy}
-              noResultsMessage={`No viable commercial roofs found in ${searchParams.area}.`}
+              noResultsMessage={
+                hasStreetQuery
+                  ? 'No targetable mapped roof found for this exact street address.'
+                  : `No viable commercial roofs found in ${searchParams.area}.`
+              }
               generatingPackId={generatingPackId}
               onViewImage={handleOpenImage}
               onGenerateMailPack={handleGenerateMailPack}

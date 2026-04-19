@@ -6,6 +6,7 @@ export interface SearchParams {
   province: string;
   city: string;
   area: string;
+  street?: string;
 }
 
 interface SearchPanelProps {
@@ -39,7 +40,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       <div>
         <h2 className="text-xl font-bold text-slate-100">Target Search</h2>
         <p className="text-sm text-slate-400 mt-1">
-          Search by area/suburb to discover real mapped commercial roofs.
+          Search area/suburb, or enter full street address for one exact property.
         </p>
       </div>
 
@@ -107,6 +108,19 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           placeholder="Goodwood"
           value={params.area}
           onChange={(e) => updateParam('area', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-200 mb-2">
+          Street Address (optional)
+        </label>
+        <input
+          type="text"
+          placeholder="98 Richmond Street"
+          value={params.street || ''}
+          onChange={(e) => updateParam('street', e.target.value)}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
         />
       </div>
