@@ -511,12 +511,25 @@ async def search_real_prospects(
                         f"{nearest_distance_m:.0f}m away."
                     )
                 else:
-                    return SearchResponse(
-                        results=[],
-                        count=0,
-                        search_area=search_area,
-                        message="No building footprint found for exact address.",
+                    nearest_any, nearest_any_distance_m = _nearest_building_with_distance(
+                        buildings,
+                        center_lat,
+                        center_lon,
                     )
+                    max_any_distance_m = max(350.0, radius_km * 1000.0)
+                    if nearest_any and nearest_any_distance_m <= max_any_distance_m:
+                        target_building = nearest_any
+                        exact_match_note = (
+                            "No exact street footprint found. "
+                            f"Using nearest mapped commercial building {nearest_any_distance_m:.0f}m away."
+                        )
+                    else:
+                        return SearchResponse(
+                            results=[],
+                            count=0,
+                            search_area=search_area,
+                            message="No building footprint found for exact address.",
+                        )
             buildings = [target_building]
         
         if not buildings:
