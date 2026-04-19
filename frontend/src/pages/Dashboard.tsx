@@ -130,34 +130,6 @@ export const Dashboard: React.FC = () => {
         message: response.data.message,
       });
 
-      if (isExactMode && exactCount === 0) {
-        const areaPayload = {
-          mode: 'area',
-          country: searchParams.country,
-          province: searchParams.province,
-          city: searchParams.city,
-          suburb: searchParams.area,
-          radius_m: 1500,
-        };
-
-        console.info('[Solarware] search:exact_empty_fallback_to_area', {
-          suburb: areaPayload.suburb,
-          city: areaPayload.city,
-          province: areaPayload.province,
-        });
-
-        const areaResponse = await api.searchProspects(areaPayload);
-        const areaCount = areaResponse.data.count ?? (areaResponse.data.results || []).length;
-
-        if (areaCount > 0) {
-          setResults(areaResponse.data.results || []);
-          setSearchMessage(
-            `No exact mapped roof at that street address. Showing ${areaCount} nearby commercial roofs in ${searchParams.area}.`
-          );
-          return;
-        }
-      }
-
       setResults(response.data.results || []);
       setSearchMessage(response.data.message || '');
     } catch (error) {

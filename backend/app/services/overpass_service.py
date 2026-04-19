@@ -225,8 +225,6 @@ def query_commercial_buildings(
                 category = "residential"
 
             excluded_categories = {
-                "residential",
-                "house",
                 "hut",
                 "cabin",
                 "shack",
@@ -241,10 +239,13 @@ def query_commercial_buildings(
             }
 
             # For commercial mode, reject residential and utility structures.
-            if not include_residential and not include_all_buildings and category in excluded_categories:
-                continue
+            if not include_residential and not include_all_buildings:
+                if category in {"residential", "house", "detached", "semidetached_house", "terrace", "apartments"}:
+                    continue
+                if category in excluded_categories:
+                    continue
 
-            # Even residential mode should still skip utility/non-target structures.
+            # Residential mode still skips utility/non-target structures.
             if include_residential and category in excluded_categories:
                 continue
 

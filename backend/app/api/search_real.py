@@ -371,52 +371,12 @@ async def search_real_prospects(
                 country=request.country,
             )
             if not geo:
-                # Fallback chain so exact mode can still search nearest mapped building
-                # when strict address geocoding is rate-limited or incomplete.
-                fallback_geo = None
-                fallback_queries = [request.suburb, request.city, request.province]
-                for fallback_query in fallback_queries:
-                    if not fallback_query:
-                        continue
-                    fallback_geo = geocode_address(
-                        fallback_query,
-                        city=request.city,
-                        province=request.province,
-                        postcode="",
-                        country=request.country,
-                    )
-                    if fallback_geo:
-                        break
-
-                if not fallback_geo:
-                    known_center = _known_center_from_context(
-                        request.country,
-                        request.province,
-                        request.city,
-                        request.suburb,
-                    )
-                    if not known_center:
-                        return SearchResponse(
-                            results=[],
-                            count=0,
-                            search_area=query_str,
-                            message="Address not found. Check street spelling and try again.",
-                        )
-
-                    center_lat, center_lon, known_label = known_center
-                    radius_km = max(0.15, request.radius_m / 1000.0)
-                    search_area = known_label
-                    exact_match_note = (
-                        "Exact address geocode unavailable. "
-                        "Using known area center to find nearest mapped building on requested street."
-                    )
-                    geo = None
-                else:
-                    geo = fallback_geo
-                    exact_match_note = (
-                        "Exact address geocode unavailable. "
-                        "Using area center to find nearest mapped building on requested street."
-                    )
+                return SearchResponse(
+                    results=[],
+                    count=0,
+                    search_area=query_str,
+                    message="Address not found. Check street spelling and try again.",
+                )
 
             if geo is not None:
                 center_lat, center_lon = geo.latitude, geo.longitude
@@ -455,10 +415,11 @@ async def search_real_prospects(
                 search_area = f"{request.suburb}, {request.city}, {request.province}"
 
         # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
-        include_residential = False
+        include_residential = is_exact_address
 
         logger.info(
-            "Querying Overpass API for commercial buildings near %s",
+            "Querying Overpass API for %s buildings near %s",
+            "all addressable" if include_residential else "commercial",
             search_area,
         )
         
@@ -476,33 +437,20 @@ async def search_real_prospects(
 
         if is_exact_address and not buildings:
             # Exact address can miss on tiny radius; retry wider before declaring no match.
-            wider_radius_km = max(0.8, radius_km * 2)
+            wider_radius_km = max(0.5, radius_km * 2)
             min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, wider_radius_km)
             buildings = query_commercial_buildings(
                 min_lat,
                 max_lat,
                 min_lon,
                 max_lon,
-                include_residential=False,
-                include_all_buildings=False,
-                min_polygon_area_sqm=60.0,
-            )
-
-        if is_exact_address and not buildings:
-            # Final fallback: broader commercial scan around resolved center.
-            final_radius_km = max(1.5, radius_km * 3)
-            min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, final_radius_km)
-            buildings = query_commercial_buildings(
-                min_lat,
-                max_lat,
-                min_lon,
-                max_lon,
-                include_residential=False,
+                include_residential=True,
                 include_all_buildings=False,
                 min_polygon_area_sqm=60.0,
             )
 
         if is_exact_address:
+            target_building = None
             tag_matched = _address_tag_matches(
                 buildings,
                 request.street_number,
@@ -517,45 +465,16 @@ async def search_real_prospects(
                 exact_match_note = (
                     f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
                 )
-            else:
-                target_building = None
 
         if is_exact_address and not target_building:
-            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=80.0)
+            target_building = _select_exact_target_building(buildings, center_lat, center_lon, max_distance_m=20.0)
             if not target_building:
-                nearest_building, nearest_distance_m = _nearest_building_on_requested_street(
-                    buildings,
-                    center_lat,
-                    center_lon,
-                    request.street_name,
+                return SearchResponse(
+                    results=[],
+                    count=0,
+                    search_area=search_area,
+                    message="No building footprint found for exact address.",
                 )
-                max_nearest_distance_m = max(250.0, radius_km * 1000.0)
-                if nearest_building and nearest_distance_m <= max_nearest_distance_m:
-                    target_building = nearest_building
-                    exact_match_note = (
-                        f"No exact footprint at address point. Using nearest mapped building on {request.street_name} "
-                        f"{nearest_distance_m:.0f}m away."
-                    )
-                else:
-                    nearest_any, nearest_any_distance_m = _nearest_building_with_distance(
-                        buildings,
-                        center_lat,
-                        center_lon,
-                    )
-                    max_any_distance_m = max(350.0, radius_km * 1000.0)
-                    if nearest_any and nearest_any_distance_m <= max_any_distance_m:
-                        target_building = nearest_any
-                        exact_match_note = (
-                            "No exact street footprint found. "
-                            f"Using nearest mapped commercial building {nearest_any_distance_m:.0f}m away."
-                        )
-                    else:
-                        return SearchResponse(
-                            results=[],
-                            count=0,
-                            search_area=search_area,
-                            message="No building footprint found for exact address.",
-                        )
             buildings = [target_building]
         
         if not buildings:
