@@ -551,7 +551,8 @@ async def search_real_prospects(
             )
 
         # Filter by radius and building type
-        buildings = filter_nearby_buildings(buildings, center_lat, center_lon, radius_km)
+        if not is_exact_address:
+            buildings = filter_nearby_buildings(buildings, center_lat, center_lon, radius_km)
         
         candidates_before_roof_filter = list(buildings)
 
@@ -629,7 +630,7 @@ async def search_real_prospects(
                 # Format savings display
                 savings_low = int(solar["savings_low"])
                 savings_high = int(solar["savings_high"])
-                savings_display = f"R {savings_low/1000:.0f}k – R {savings_high/1000:.0f}k / year"
+                savings_display = f"R {savings_low/1000:.0f}k - R {savings_high/1000:.0f}k / year"
 
                 prospect = SolarProspect(
                     osm_id=building.osm_id,
