@@ -28,25 +28,13 @@ SA_SOLAR_YIELD = {
 # Default tariff scenarios (R per kWh)
 TARIFF_LOW = 1.80
 TARIFF_MEDIUM = 2.40
-TARIFF_HIGH = 3.20
+TARIFF_HIGH = 3.00
 
-# Roof usable percentage by building type
-ROOF_USABLE_FACTORS = {
-    "warehouse": 0.75,
-    "factory": 0.75,
-    "industrial": 0.75,
-    "retail": 0.60,
-    "office": 0.60,
-    "school": 0.75,
-    "church": 0.60,
-    "hospital": 0.60,
-    "farm": 0.75,
-    "unknown": 0.60,
-}
+# Roof usable percentage fixed for V1 panel estimate.
+ROOF_USABLE_FACTOR = 0.72
 
-# Practical panel layout assumptions.
-PANEL_FOOTPRINT_SQM = 2.2  # panel + access/spacing footprint
-PANEL_PACKING_RATIO = 0.80
+PANEL_FOOTPRINT_SQM = 2.2
+PANEL_KW = 0.55
 
 
 def get_regional_yield(province: str = None) -> int:
@@ -71,18 +59,11 @@ def calculate_solar_capacity(roof_area_sqm: float, building_type: str) -> Tuple[
     
     RETURNS: (capacity_low_kw, capacity_high_kw)
     """
-    usable_factor = get_roof_usable_factor(building_type)
-    usable_area_sqm = roof_area_sqm * usable_factor
-
-    # sqm per kW = 5-7
-    capacity_low = usable_area_sqm / 7  # Optimistic
-    capacity_high = usable_area_sqm / 5  # Conservative
-
-    # Round to nearest 0.5 kW
-    capacity_low = math.floor(capacity_low * 2) / 2
-    capacity_high = math.ceil(capacity_high * 2) / 2
-
-    return (capacity_low, capacity_high)
+    usable_area_sqm = roof_area_sqm * ROOF_USABLE_FACTOR
+    panel_count = max(0, int(usable_area_sqm / PANEL_FOOTPRINT_SQM))
+    capacity_kw = panel_count * PANEL_KW
+    capacity_kw = math.floor(capacity_kw * 10) / 10
+    return (capacity_kw, capacity_kw)
 
 
 def calculate_annual_generation(
@@ -96,7 +77,7 @@ def calculate_annual_generation(
     
     RETURNS: annual_kwh (use middle value of capacity range)
     """
-    yield_per_kw = get_regional_yield(province)
+    yield_per_kw = 1650
     return capacity_kw * yield_per_kw
 
 
@@ -181,13 +162,13 @@ def get_solar_stats(
     
     RETURNS complete solar opportunity data
     """
-    usable_roof_sqm = roof_area_sqm * get_roof_usable_factor(building_type)
-    panel_count = max(0, int((usable_roof_sqm * PANEL_PACKING_RATIO) / PANEL_FOOTPRINT_SQM))
+    usable_roof_sqm = roof_area_sqm * ROOF_USABLE_FACTOR
+    panel_count = max(0, int(usable_roof_sqm / PANEL_FOOTPRINT_SQM))
 
     capacity_low, capacity_high = calculate_solar_capacity(roof_area_sqm, building_type)
 
     # Keep panel count and capacity physically consistent.
-    panel_capacity_kw = (panel_count * 0.4)
+    panel_capacity_kw = (panel_count * PANEL_KW)
     if panel_capacity_kw > 0:
         capacity_low = min(capacity_low, panel_capacity_kw)
         capacity_high = min(capacity_high, panel_capacity_kw)

@@ -460,18 +460,15 @@ async def search_real_prospects(
         has_street_number = bool(request.street_number and request.street_number.strip())
         has_street_name = bool(request.street_name and request.street_name.strip())
 
-        if has_street_number != has_street_name:
+        if has_street_number or has_street_name:
             return SearchResponse(
                 results=[],
                 count=0,
                 search_area="",
-                message=(
-                    "Provide full street address (number and street) for exact search, "
-                    "or leave address blank for area search."
-                ),
+                message="Solarware V1 uses area search only. Leave street address blank and search by area/suburb.",
             )
 
-        is_exact_address = has_street_number and has_street_name
+        is_exact_address = False
         logger.info("Search request: exact_address=%s", is_exact_address)
 
         if is_exact_address:
@@ -792,7 +789,7 @@ async def search_real_prospects(
         effective_min_roof_sqm = (
             request.min_roof_sqm
             if request.min_roof_sqm is not None
-            else (20 if is_exact_address else 150)
+            else 120
         )
         buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
 

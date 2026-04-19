@@ -47,8 +47,6 @@ export interface SearchRequestV1 {
   province: string;
   city: string;
   suburb: string;
-  street_name?: string;
-  street_number?: string;
   radius_m?: number;
 }
 

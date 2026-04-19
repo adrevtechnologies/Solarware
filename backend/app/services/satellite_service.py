@@ -27,13 +27,21 @@ def _bbox_from_polygon(nodes: List[Tuple[float, float]], padding_ratio: float = 
     return (min_lat - pad_lat, max_lat + pad_lat, min_lon - pad_lon, max_lon + pad_lon)
 
 
+def _centroid_from_polygon(nodes: List[Tuple[float, float]]) -> Tuple[float, float]:
+    if not nodes:
+        raise ValueError("Polygon nodes are required")
+    lat = sum(n[0] for n in nodes) / len(nodes)
+    lon = sum(n[1] for n in nodes) / len(nodes)
+    return lat, lon
+
+
 def get_satellite_image_url_for_bbox(
     min_lat: float,
     max_lat: float,
     min_lon: float,
     max_lon: float,
-    width: int = 800,
-    height: int = 800,
+    width: int = 640,
+    height: int = 640,
 ) -> str:
     settings = get_settings()
     google_api_key = settings.GOOGLE_MAPS_API_KEY
@@ -45,7 +53,7 @@ def get_satellite_image_url_for_bbox(
         return (
             f"https://maps.googleapis.com/maps/api/staticmap?"
             f"center={center_lat},{center_lon}"
-            f"&zoom=20"
+            f"&zoom=21"
             f"&size={width}x{height}"
             f"&maptype=satellite"
             f"&style=feature:all|element:labels|visibility:off"
@@ -65,12 +73,26 @@ def get_satellite_image_url_for_bbox(
 
 def get_satellite_image_url_for_polygon(
     nodes: List[Tuple[float, float]],
-    width: int = 800,
-    height: int = 800,
+    width: int = 640,
+    height: int = 640,
     padding_ratio: float = 0.35,
 ) -> str:
     if not nodes:
         raise ValueError("Polygon nodes are required for polygon imagery")
+    settings = get_settings()
+    google_api_key = settings.GOOGLE_MAPS_API_KEY
+    if google_api_key:
+        center_lat, center_lon = _centroid_from_polygon(nodes)
+        return (
+            f"https://maps.googleapis.com/maps/api/staticmap?"
+            f"center={center_lat},{center_lon}"
+            f"&zoom=21"
+            f"&size={width}x{height}"
+            f"&maptype=satellite"
+            f"&style=feature:all|element:labels|visibility:off"
+            f"&key={google_api_key}"
+        )
+
     min_lat, max_lat, min_lon, max_lon = _bbox_from_polygon(nodes, padding_ratio=padding_ratio)
     return get_satellite_image_url_for_bbox(
         min_lat=min_lat,
@@ -82,7 +104,7 @@ def get_satellite_image_url_for_polygon(
     )
 
 
-def get_satellite_image_url(latitude: float, longitude: float, width: int = 400, height: int = 400) -> str:
+def get_satellite_image_url(latitude: float, longitude: float, width: int = 640, height: int = 640) -> str:
     """
     Get satellite image URL from Google Static Maps
     
@@ -94,7 +116,7 @@ def get_satellite_image_url(latitude: float, longitude: float, width: int = 400,
     google_api_key = settings.GOOGLE_MAPS_API_KEY
 
     if google_api_key:
-        zoom = 18
+        zoom = 21
         return (
             f"https://maps.googleapis.com/maps/api/staticmap?"
             f"center={latitude},{longitude}"
