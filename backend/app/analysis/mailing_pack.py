@@ -156,6 +156,14 @@ Solarware
             raise MailingPackError(f"Failed to generate mailing pack: {str(e)}")
 
     @staticmethod
+    def _resolve_logo_path() -> Optional[Path]:
+        root_dir = Path(__file__).resolve().parents[3]
+        logo_path = root_dir / "frontend" / "public" / "logo.png"
+        if logo_path.exists():
+            return logo_path
+        return None
+
+    @staticmethod
     def _generate_pdf(
         pdf_path: Path,
         prospect: Dict,
@@ -169,8 +177,18 @@ Solarware
         width, height = A4
 
         y = height - 20 * mm
-        c.setFont("Helvetica-Bold", 15)
-        c.drawString(20 * mm, y, "Solarware Mail Pack")
+        logo_path = MailingPackGenerator._resolve_logo_path()
+        if logo_path is not None:
+            try:
+                c.drawImage(str(logo_path), 20 * mm, y - 8 * mm, width=12 * mm, height=12 * mm, preserveAspectRatio=True, mask='auto')
+                c.setFont("Helvetica-Bold", 15)
+                c.drawString(35 * mm, y, "Solarware Mail Pack")
+            except Exception:
+                c.setFont("Helvetica-Bold", 15)
+                c.drawString(20 * mm, y, "Solarware Mail Pack")
+        else:
+            c.setFont("Helvetica-Bold", 15)
+            c.drawString(20 * mm, y, "Solarware Mail Pack")
         y -= 10 * mm
 
         c.setFont("Helvetica-Bold", 11)
