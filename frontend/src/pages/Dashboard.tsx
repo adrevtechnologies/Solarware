@@ -22,6 +22,7 @@ export const Dashboard: React.FC = () => {
   const [searchMessage, setSearchMessage] = useState('');
   const [warmingBackend, setWarmingBackend] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+  const [areaOptions, setAreaOptions] = useState<string[]>([]);
 
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -61,7 +62,6 @@ export const Dashboard: React.FC = () => {
     }
 
     setWarmingBackend(true);
-    setSearchMessage('Waking backend service...');
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
@@ -84,6 +84,32 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     void ensureBackendReady();
   }, [ensureBackendReady]);
+
+  const loadAreaSuggestions = useCallback(
+    async (query: string) => {
+      try {
+        const response = await api.suggestAreas({
+          country: searchParams.country,
+          province: searchParams.province,
+          city: searchParams.city,
+          query,
+        });
+        const values = response.data.areas || [];
+        setAreaOptions(values);
+      } catch (error) {
+        console.warn('[Solarware] area:suggest:error', error);
+      }
+    },
+    [searchParams.country, searchParams.province, searchParams.city]
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadAreaSuggestions(searchParams.area || '');
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchParams.area, searchParams.city, searchParams.province, searchParams.country, loadAreaSuggestions]);
 
   const handleSearch = async () => {
     setLoading(true);
@@ -223,17 +249,14 @@ export const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1f2937_0%,_#0f172a_55%,_#020617_100%)] text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:py-10">
         <header className="mb-8 rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <img
               src="/logo.png"
               alt="Solarware logo"
-              className="h-10 w-10 rounded-md border border-slate-600 bg-slate-950/60 object-contain p-1"
+              className="h-14 w-14 rounded-lg border border-slate-500 bg-slate-950/60 object-contain p-1.5"
             />
-            <h1 className="text-3xl font-bold tracking-tight">Solarware V1</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Solarware</h1>
           </div>
-          <p className="mt-2 text-sm text-slate-300">
-            Real commercial roof discovery for area-targeted outreach.
-          </p>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-12">
@@ -241,6 +264,10 @@ export const Dashboard: React.FC = () => {
             <SearchPanel
               params={searchParams}
               onParamsChange={setSearchParams}
+              areaOptions={areaOptions}
+              onAreaQueryChange={(q) => {
+                void loadAreaSuggestions(q);
+              }}
               onSearch={handleSearch}
               loading={loading || warmingBackend}
             />

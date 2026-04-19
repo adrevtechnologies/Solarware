@@ -13,6 +13,7 @@ from typing import Optional, List, Tuple
 from ..services.nominatim_service import (
     geocode_address,
     geocode_address_google,
+    suggest_areas_google,
     reverse_geocode,
     get_bounding_box,
 )
@@ -102,6 +103,17 @@ class MailPackResponse(BaseModel):
 class MailPackSendRequest(BaseModel):
     mailing_pack: dict
     recipient_email: str
+
+
+class AreaSuggestRequest(BaseModel):
+    country: Optional[str] = "South Africa"
+    province: Optional[str] = None
+    city: Optional[str] = None
+    query: Optional[str] = None
+
+
+class AreaSuggestResponse(BaseModel):
+    areas: List[str]
 
 
 KNOWN_AREA_CENTERS = {
@@ -423,6 +435,19 @@ def _save_cached_results(request: SearchRequest, response: SearchResponse) -> No
     cache_file.write_text(response.model_dump_json(indent=2), encoding="utf-8")
 
 
+@router.post("/areas/suggest", response_model=AreaSuggestResponse)
+async def suggest_areas(request: AreaSuggestRequest) -> AreaSuggestResponse:
+    """Suggest area/suburb names using Google Places API for dropdown usage."""
+    areas = suggest_areas_google(
+        query=request.query or "",
+        city=request.city or "",
+        province=request.province or "",
+        country=request.country or "South Africa",
+        limit=12,
+    )
+    return AreaSuggestResponse(areas=areas)
+
+
 @router.post("/search")
 async def search_real_prospects(
     request: SearchRequest,
@@ -601,6 +626,15 @@ async def search_real_prospects(
                 country=request.country,
             )
             if not geo:
+                geo = geocode_address_google(
+                    request.suburb,
+                    city=request.city,
+                    province=request.province,
+                    suburb=request.suburb,
+                    postcode="",
+                    country=request.country,
+                )
+            if not geo:
                 known_center = _known_center_from_context(
                     request.country,
                     request.province,
@@ -705,11 +739,18 @@ async def search_real_prospects(
                 if (
                     geocode_is_house_precise
                     and geo is not None
-                    and _reverse_point_matches_request(
-                        center_lat,
-                        center_lon,
-                        request.street_name,
-                        request.street_number,
+                    and (
+                        _reverse_point_matches_request(
+                            center_lat,
+                            center_lon,
+                            request.street_name,
+                            request.street_number,
+                        )
+                        or _address_text_matches_request(
+                            geo.address,
+                            request.street_name,
+                            request.street_number,
+                        )
                     )
                 ):
                     fallback_image_url = get_satellite_image_url(center_lat, center_lon)

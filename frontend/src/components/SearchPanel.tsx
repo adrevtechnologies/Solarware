@@ -12,6 +12,8 @@ export interface SearchParams {
 interface SearchPanelProps {
   params: SearchParams;
   onParamsChange: (params: SearchParams) => void;
+  areaOptions: string[];
+  onAreaQueryChange: (query: string) => void;
   onSearch: () => void;
   loading: boolean;
 }
@@ -19,6 +21,8 @@ interface SearchPanelProps {
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
   onParamsChange,
+  areaOptions,
+  onAreaQueryChange,
   onSearch,
   loading,
 }) => {
@@ -39,9 +43,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-4">
       <div>
         <h2 className="text-xl font-bold text-slate-100">Target Search</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Search area/suburb, or enter full street address for one exact property.
-        </p>
+        <p className="text-sm text-slate-400 mt-1">Search area or a full street address.</p>
       </div>
 
       <div>
@@ -106,10 +108,19 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         <input
           type="text"
           placeholder="Goodwood"
+          list="area-suggestions"
           value={params.area}
-          onChange={(e) => updateParam('area', e.target.value)}
+          onChange={(e) => {
+            updateParam('area', e.target.value);
+            onAreaQueryChange(e.target.value);
+          }}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
         />
+        <datalist id="area-suggestions">
+          {areaOptions.map((area) => (
+            <option key={area} value={area} />
+          ))}
+        </datalist>
       </div>
 
       <div>
