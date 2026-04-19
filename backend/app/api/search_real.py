@@ -229,6 +229,28 @@ def _address_text_matches_request(
     return (street in text) and (number in _normalize_house_number(text))
 
 
+def _reverse_point_matches_request(
+    lat: float,
+    lon: float,
+    requested_street: Optional[str],
+    requested_number: Optional[str],
+) -> bool:
+    rg = reverse_geocode(lat, lon) or {}
+    if _exact_address_match(
+        rg.get("street"),
+        rg.get("house_number"),
+        requested_street,
+        requested_number,
+    ):
+        return True
+
+    return _address_text_matches_request(
+        rg.get("address"),
+        requested_street,
+        requested_number,
+    )
+
+
 def _address_tag_matches(
     buildings,
     street_number: Optional[str],
@@ -454,6 +476,14 @@ async def search_real_prospects(
 
         if is_exact_address:
             query_str = f"{request.street_number or ''} {request.street_name}".strip()
+            area_anchor = geocode_address(
+                request.suburb,
+                city=request.city,
+                province=request.province,
+                suburb=request.suburb,
+                postcode="",
+                country=request.country,
+            )
             geo = geocode_address(
                 query_str,
                 city=request.city,
@@ -540,9 +570,25 @@ async def search_real_prospects(
                     request.street_number,
                     request.street_name,
                 )
+                if not exact_points and area_anchor is not None:
+                    # If geocoder point is off, retry exact OSM tags around selected suburb/city center.
+                    area_bbox = get_bounding_box(
+                        area_anchor.latitude,
+                        area_anchor.longitude,
+                        max(1.0, request.radius_m / 1000.0),
+                    )
+                    exact_points = query_exact_address_points(
+                        area_bbox[0],
+                        area_bbox[1],
+                        area_bbox[2],
+                        area_bbox[3],
+                        request.street_number,
+                        request.street_name,
+                    )
                 if exact_points:
                     center_lat, center_lon = exact_points[0]
                     radius_km = 0.12
+                    geocode_is_house_precise = True
                     exact_match_note = (
                         f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
                     )
@@ -656,7 +702,16 @@ async def search_real_prospects(
                     )
 
             if not target_building:
-                if geocode_is_house_precise and geo is not None:
+                if (
+                    geocode_is_house_precise
+                    and geo is not None
+                    and _reverse_point_matches_request(
+                        center_lat,
+                        center_lon,
+                        request.street_name,
+                        request.street_number,
+                    )
+                ):
                     fallback_image_url = get_satellite_image_url(center_lat, center_lon)
                     geo_result = reverse_geocode(center_lat, center_lon) or {}
                     fallback_address = geo_result.get("address") or geo.address or query_str or "Exact address"
