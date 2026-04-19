@@ -431,16 +431,28 @@ async def search_real_prospects(
                 country=request.country,
             )
             if not geo:
-                return SearchResponse(
-                    results=[],
-                    count=0,
-                    search_area=request.suburb,
-                    message="Area not found. Check spelling and try again.",
+                known_center = _known_center_from_context(
+                    request.country,
+                    request.province,
+                    request.city,
+                    request.suburb,
                 )
+                if not known_center:
+                    return SearchResponse(
+                        results=[],
+                        count=0,
+                        search_area=request.suburb,
+                        message="Area not found. Check spelling and try again.",
+                    )
+                center_lat, center_lon, known_label = known_center
+                radius_km = max(0.5, request.radius_m / 1000.0)
+                search_area = known_label
+                geo = None
 
-            center_lat, center_lon = geo.latitude, geo.longitude
-            radius_km = max(0.5, request.radius_m / 1000.0)
-            search_area = f"{request.suburb}, {request.city}, {request.province}"
+            if geo is not None:
+                center_lat, center_lon = geo.latitude, geo.longitude
+                radius_km = max(0.5, request.radius_m / 1000.0)
+                search_area = f"{request.suburb}, {request.city}, {request.province}"
 
         # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
         include_residential = False
@@ -466,6 +478,20 @@ async def search_real_prospects(
             # Exact address can miss on tiny radius; retry wider before declaring no match.
             wider_radius_km = max(0.8, radius_km * 2)
             min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, wider_radius_km)
+            buildings = query_commercial_buildings(
+                min_lat,
+                max_lat,
+                min_lon,
+                max_lon,
+                include_residential=False,
+                include_all_buildings=False,
+                min_polygon_area_sqm=60.0,
+            )
+
+        if is_exact_address and not buildings:
+            # Final fallback: broader commercial scan around resolved center.
+            final_radius_km = max(1.5, radius_km * 3)
+            min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, final_radius_km)
             buildings = query_commercial_buildings(
                 min_lat,
                 max_lat,
