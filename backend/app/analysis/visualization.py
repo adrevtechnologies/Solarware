@@ -144,19 +144,41 @@ class VizGenerator:
         return px
 
     @staticmethod
+    def _polygon_area_px(polygon: List[Tuple[float, float]]) -> float:
+        if len(polygon) < 3:
+            return 0.0
+        area = 0.0
+        for i in range(len(polygon)):
+            x1, y1 = polygon[i]
+            x2, y2 = polygon[(i + 1) % len(polygon)]
+            area += (x1 * y2) - (x2 * y1)
+        return abs(area) / 2.0
+
+    @staticmethod
     def _draw_panels_in_polygon(
         draw: ImageDraw.ImageDraw,
         polygon_px: List[Tuple[float, float]],
         panel_count: int,
+        roof_area_sqm: float,
     ) -> int:
         xs = [p[0] for p in polygon_px]
         ys = [p[1] for p in polygon_px]
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
 
-        panel_w = 22
-        panel_h = 12
-        spacing = 3
+        panel_footprint_sqm = 2.2
+        panel_aspect = 1.8  # Typical portrait panel ratio (length / width)
+        polygon_area_px = VizGenerator._polygon_area_px(polygon_px)
+
+        if roof_area_sqm > 0 and polygon_area_px > 0:
+            panel_px_area = (panel_footprint_sqm / roof_area_sqm) * polygon_area_px
+            panel_h = max(2.0, math.sqrt(panel_px_area / panel_aspect))
+            panel_w = max(4.0, panel_h * panel_aspect)
+            spacing = max(1.0, min(panel_w, panel_h) * 0.12)
+        else:
+            panel_w = 22.0
+            panel_h = 12.0
+            spacing = 3.0
 
         placed = 0
         y = min_y
@@ -205,6 +227,7 @@ class VizGenerator:
                 draw=draw,
                 polygon_px=polygon_px,
                 panel_count=max(0, panel_count),
+                roof_area_sqm=max(0.0, roof_area_sqm),
             )
 
         if placed > 0:
