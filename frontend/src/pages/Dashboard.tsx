@@ -33,20 +33,23 @@ export const Dashboard: React.FC = () => {
 
   const hasStreetQuery = !!searchParams.street?.trim();
 
-  const splitStreetInput = (street?: string): { street_number?: string; street_name?: string } => {
+  const splitStreetInput = (
+    street?: string
+  ): { street_number?: string; street_name?: string; hasPartial: boolean } => {
     const raw = (street || '').trim();
     if (!raw) {
-      return { street_number: undefined, street_name: undefined };
+      return { street_number: undefined, street_name: undefined, hasPartial: false };
     }
 
-    const firstSpace = raw.indexOf(' ');
-    if (firstSpace <= 0) {
-      return { street_number: undefined, street_name: raw };
+    const match = raw.match(/^(\d+[a-zA-Z]?)\s+(.+)$/);
+    if (!match) {
+      return { street_number: undefined, street_name: undefined, hasPartial: true };
     }
 
     return {
-      street_number: raw.slice(0, firstSpace).trim(),
-      street_name: raw.slice(firstSpace + 1).trim(),
+      street_number: match[1].trim(),
+      street_name: match[2].trim(),
+      hasPartial: false,
     };
   };
 
@@ -95,7 +98,15 @@ export const Dashboard: React.FC = () => {
       }
 
       const streetParts = splitStreetInput(searchParams.street);
-      const isExactMode = !!streetParts.street_name;
+      if (streetParts.hasPartial) {
+        setResults([]);
+        setSearchMessage(
+          'Enter full street address as "98 Richmond Street" for exact search, or leave it blank for area search.'
+        );
+        return;
+      }
+
+      const isExactMode = !!streetParts.street_number && !!streetParts.street_name;
       const payload = {
         mode: isExactMode ? 'address' : 'area',
         country: searchParams.country,

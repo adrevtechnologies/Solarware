@@ -347,7 +347,14 @@ def _cache_file_for_request(request: SearchRequest) -> Path:
     cache_root.mkdir(parents=True, exist_ok=True)
 
     key_data = {
-        "mode": "address" if (request.street_name and request.street_name.strip()) else "area",
+        "mode": (
+            "address"
+            if (
+                (request.street_number and request.street_number.strip())
+                and (request.street_name and request.street_name.strip())
+            )
+            else "area"
+        ),
         "country": request.country,
         "province": request.province,
         "city": request.city,
@@ -410,7 +417,21 @@ async def search_real_prospects(
                 message="Country, province/state, city, and area/suburb are required.",
             )
 
-        is_exact_address = bool(request.street_name and request.street_name.strip())
+        has_street_number = bool(request.street_number and request.street_number.strip())
+        has_street_name = bool(request.street_name and request.street_name.strip())
+
+        if has_street_number != has_street_name:
+            return SearchResponse(
+                results=[],
+                count=0,
+                search_area="",
+                message=(
+                    "Provide full street address (number and street) for exact search, "
+                    "or leave address blank for area search."
+                ),
+            )
+
+        is_exact_address = has_street_number and has_street_name
         logger.info("Search request: exact_address=%s", is_exact_address)
 
         if is_exact_address:
@@ -460,48 +481,22 @@ async def search_real_prospects(
                 search_area = geo.address
 
                 # When geocoder resolves only street-level (no house-number precision),
-                # expand strict search area but still return only exact-address match.
+                # widen search slightly but keep center anchored to exact geocode point.
                 if request.street_number and not _exact_address_match(
                     geo.street,
                     geo.house_number,
                     request.street_name,
                     request.street_number,
                 ):
-                    area_geo_for_exact = geocode_address(
-                        request.suburb,
-                        city=request.city,
-                        province=request.province,
-                        postcode="",
-                        country=request.country,
-                    )
-                    if area_geo_for_exact:
-                        center_lat, center_lon = area_geo_for_exact.latitude, area_geo_for_exact.longitude
-                    radius_km = max(1.8, radius_km)
+                    radius_km = max(0.35, radius_km)
 
             # If geocoder returns only a street-level point, try exact addr tags from Overpass.
             if request.street_number and request.street_name:
-                area_geo = geocode_address(
-                    request.suburb,
-                    city=request.city,
-                    province=request.province,
-                    postcode="",
-                    country=request.country,
+                exact_addr_bbox = get_bounding_box(
+                    center_lat,
+                    center_lon,
+                    max(0.35, request.radius_m / 1000.0),
                 )
-                if area_geo:
-                    area_center_lat, area_center_lon = area_geo.latitude, area_geo.longitude
-                else:
-                    known_center = _known_center_from_context(
-                        request.country,
-                        request.province,
-                        request.city,
-                        request.suburb,
-                    )
-                    if known_center:
-                        area_center_lat, area_center_lon, _ = known_center
-                    else:
-                        area_center_lat, area_center_lon = center_lat, center_lon
-
-                exact_addr_bbox = get_bounding_box(area_center_lat, area_center_lon, max(1.8, request.radius_m / 1000.0))
                 exact_points = query_exact_address_points(
                     exact_addr_bbox[0],
                     exact_addr_bbox[1],
