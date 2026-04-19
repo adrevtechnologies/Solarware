@@ -18,6 +18,7 @@ from ..services.nominatim_service import (
 from ..services.overpass_service import (
     query_commercial_buildings,
     filter_nearby_buildings,
+    query_exact_address_points,
 )
 from ..services.solar_calculations import get_solar_stats
 from ..services.satellite_service import get_satellite_image_url, get_satellite_image_url_for_polygon
@@ -433,6 +434,45 @@ async def search_real_prospects(
                 center_lat, center_lon = geo.latitude, geo.longitude
                 radius_km = max(0.15, request.radius_m / 1000.0)
                 search_area = geo.address
+
+            # If geocoder returns only a street-level point, try exact addr tags from Overpass.
+            if request.street_number and request.street_name:
+                area_geo = geocode_address(
+                    request.suburb,
+                    city=request.city,
+                    province=request.province,
+                    postcode="",
+                    country=request.country,
+                )
+                if area_geo:
+                    area_center_lat, area_center_lon = area_geo.latitude, area_geo.longitude
+                else:
+                    known_center = _known_center_from_context(
+                        request.country,
+                        request.province,
+                        request.city,
+                        request.suburb,
+                    )
+                    if known_center:
+                        area_center_lat, area_center_lon, _ = known_center
+                    else:
+                        area_center_lat, area_center_lon = center_lat, center_lon
+
+                exact_addr_bbox = get_bounding_box(area_center_lat, area_center_lon, max(1.8, request.radius_m / 1000.0))
+                exact_points = query_exact_address_points(
+                    exact_addr_bbox[0],
+                    exact_addr_bbox[1],
+                    exact_addr_bbox[2],
+                    exact_addr_bbox[3],
+                    request.street_number,
+                    request.street_name,
+                )
+                if exact_points:
+                    center_lat, center_lon = exact_points[0]
+                    radius_km = 0.12
+                    exact_match_note = (
+                        f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
+                    )
         else:
             geo = geocode_address(
                 request.suburb,

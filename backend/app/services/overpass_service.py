@@ -351,3 +351,72 @@ def filter_nearby_buildings(
             filtered.append(building)
     
     return filtered
+
+
+def query_exact_address_points(
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    street_number: str,
+    street_name: str,
+) -> List[Tuple[float, float]]:
+    """Query Overpass for exact addr:housenumber + addr:street tagged points/centers."""
+    if not street_number or not street_name:
+        return []
+
+    bbox_str = f"{min_lat},{min_lon},{max_lat},{max_lon}"
+    escaped_street = street_name.replace('\\', '\\\\').replace('"', '\\"')
+    escaped_number = street_number.replace('\\', '\\\\').replace('"', '\\"')
+
+    query = f"""
+    [bbox:{bbox_str}];
+    (
+        node["addr:housenumber"="{escaped_number}"]["addr:street"~"^{escaped_street}$",i];
+        way["addr:housenumber"="{escaped_number}"]["addr:street"~"^{escaped_street}$",i];
+        relation["addr:housenumber"="{escaped_number}"]["addr:street"~"^{escaped_street}$",i];
+        node["addr:housenumber"="{escaped_number}"]["addr:street"~"{escaped_street}",i];
+        way["addr:housenumber"="{escaped_number}"]["addr:street"~"{escaped_street}",i];
+        relation["addr:housenumber"="{escaped_number}"]["addr:street"~"{escaped_street}",i];
+    );
+    out center tags;
+    """
+
+    xml_text = _query_overpass_xml(query)
+    if not xml_text:
+        return []
+
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        logger.warning("Failed to parse exact address Overpass response")
+        return []
+
+    points: List[Tuple[float, float]] = []
+
+    for node in root.findall('.//node'):
+        lat = node.get('lat')
+        lon = node.get('lon')
+        if lat is not None and lon is not None:
+            points.append((float(lat), float(lon)))
+
+    for way in root.findall('.//way'):
+        center = way.find('center')
+        if center is not None and center.get('lat') is not None and center.get('lon') is not None:
+            points.append((float(center.get('lat')), float(center.get('lon'))))
+
+    for relation in root.findall('.//relation'):
+        center = relation.find('center')
+        if center is not None and center.get('lat') is not None and center.get('lon') is not None:
+            points.append((float(center.get('lat')), float(center.get('lon'))))
+
+    unique_points: List[Tuple[float, float]] = []
+    seen = set()
+    for lat, lon in points:
+        key = (round(lat, 7), round(lon, 7))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_points.append((lat, lon))
+
+    return unique_points
