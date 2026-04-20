@@ -11,13 +11,16 @@ export const Dashboard: React.FC = () => {
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
     query: '',
+    country: 'South Africa',
+    province: '',
   });
+  const [searchMode, setSearchMode] = useState<'area' | 'single-property'>('area');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [sortBy, setSortBy] = useState<ResultsSort>('largest_roof');
 
   const [results, setResults] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
-  const [warmingBackend, setWarmingBackend] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   // cityOptions and areaOptions removed
 
@@ -40,13 +43,10 @@ export const Dashboard: React.FC = () => {
       return true;
     }
 
-    setWarmingBackend(true);
-
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         await api.healthCheck();
         setBackendReady(true);
-        setWarmingBackend(false);
         return true;
       } catch (error) {
         console.warn('[Solarware] backend:wakeup:attempt_failed', { attempt, error });
@@ -55,8 +55,6 @@ export const Dashboard: React.FC = () => {
         }
       }
     }
-
-    setWarmingBackend(false);
     return false;
   }, [backendReady]);
 
@@ -66,9 +64,9 @@ export const Dashboard: React.FC = () => {
 
   // All area/city suggestion logic removed
 
-  const handleSearch = async () => {
+  const handleAnalyzeProperty = async () => {
     setLoading(true);
-    setSearchMessage('Searching...');
+    setSearchMessage('Analyzing property...');
     try {
       const ready = await ensureBackendReady();
       if (!ready) {
@@ -79,12 +77,13 @@ export const Dashboard: React.FC = () => {
       // Use the new query param for backend search
       const payload = {
         query: searchParams.query,
+        country: searchParams.country,
+        province: searchParams.province,
         place_id: searchParams.place_id,
         lat: searchParams.lat,
         lng: searchParams.lng,
         formatted_address: searchParams.formatted_address,
         business_name: searchParams.business_name,
-        min_roof_sqm: searchParams.min_roof_sqm,
         radius_m: 50,
       };
       let response;
@@ -95,8 +94,13 @@ export const Dashboard: React.FC = () => {
         await sleep(1200);
         response = await api.searchProspects(payload);
       }
-      setResults(response.data.results || []);
-      setSearchMessage(response.data.message || '');
+      const propertyResults = (response.data.results || []).slice(0, 1);
+      setResults(propertyResults);
+      setSearchMessage(
+        propertyResults.length > 0
+          ? response.data.message || 'Property analyzed successfully.'
+          : 'No mapped roof found for this property search.'
+      );
     } catch (error) {
       console.error('[Solarware] search:error', error);
       setResults([]);
@@ -143,9 +147,9 @@ export const Dashboard: React.FC = () => {
     });
   };
 
-  const handleScanArea = async () => {
+  const handleAreaSearch = async () => {
     setLoading(true);
-    setSearchMessage('Running area mass scan...');
+    setSearchMessage('Generating area leads...');
     try {
       const ready = await ensureBackendReady();
       if (!ready) {
@@ -154,8 +158,16 @@ export const Dashboard: React.FC = () => {
         return;
       }
 
+      const areaQuery = [
+        searchParams.query.trim(),
+        (searchParams.province || '').trim(),
+        (searchParams.country || 'South Africa').trim(),
+      ]
+        .filter(Boolean)
+        .join(', ');
+
       const response = await api.areaMassSearch({
-        query: searchParams.query,
+        query: areaQuery,
         place_id: searchParams.place_id,
         center_lat: searchParams.lat,
         center_lng: searchParams.lng,
@@ -165,60 +177,30 @@ export const Dashboard: React.FC = () => {
         page_size: 100,
       });
 
-      const prospects = mapAreaScanToProspects(response.data.results || []);
+      let prospects = mapAreaScanToProspects(response.data.results || []);
+      if (searchParams.min_roof_sqm && searchParams.min_roof_sqm > 0) {
+        prospects = prospects.filter((p) => p.roof_area_sqm >= searchParams.min_roof_sqm!);
+      }
+
       setResults(prospects);
-      setSearchMessage(
-        response.data.export_csv_url
-          ? `Area scan complete: ${response.data.total} leads ranked. CSV ready at ${response.data.export_csv_url}`
-          : `Area scan complete: ${response.data.total} leads ranked.`
-      );
+      setSearchMessage(`Lead generation complete: ${prospects.length} viable properties ranked.`);
     } catch (error) {
       console.error('[Solarware] area-scan:error', error);
       setResults([]);
       setSearchMessage(
-        `Area scan failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Area search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSingleProperty = async () => {
-    setLoading(true);
-    setSearchMessage('Running single-property lookup...');
-    try {
-      const ready = await ensureBackendReady();
-      if (!ready) {
-        setResults([]);
-        setSearchMessage('Service temporarily unavailable. Please retry.');
-        return;
-      }
-
-      const response = await api.areaMassSearch({
-        query: searchParams.query,
-        place_id: searchParams.place_id,
-        center_lat: searchParams.lat,
-        center_lng: searchParams.lng,
-        radius_m: 450,
-        tile_size_m: 300,
-        page: 1,
-        page_size: 1,
-      });
-
-      const prospects = mapAreaScanToProspects(response.data.results || []);
-      setResults(prospects.slice(0, 1));
-      setSearchMessage(
-        `Single property complete: ${prospects.length > 0 ? '1 lead found.' : 'No matching lead found.'}`
-      );
-    } catch (error) {
-      console.error('[Solarware] single-property:error', error);
-      setResults([]);
-      setSearchMessage(
-        `Single property failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    } finally {
-      setLoading(false);
+  const handleModeSearch = async () => {
+    if (searchMode === 'area') {
+      await handleAreaSearch();
+      return;
     }
+    await handleAnalyzeProperty();
   };
 
   const handleOpenImage = (prospect: Prospect) => {
@@ -301,22 +283,19 @@ export const Dashboard: React.FC = () => {
               <span className="whitespace-nowrap">book more deals automatically.</span>
             </p>
           </div>
-          <div className="ml-auto flex items-center rounded-lg bg-slate-900 px-3 py-2">
-            <span className="text-white text-lg font-semibold drop-shadow-sm">
-              Now live on solarware.adrevtechnologies.com
-            </span>
-          </div>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <SearchPanel
               params={searchParams}
+              mode={searchMode}
+              showAdvanced={showAdvanced}
               onParamsChange={setSearchParams}
-              onSearchLeads={handleSearch}
-              onScanArea={handleScanArea}
-              onSingleProperty={handleSingleProperty}
-              loading={loading || warmingBackend}
+              onModeChange={setSearchMode}
+              onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
+              onFindLeads={handleModeSearch}
+              loading={loading}
             />
           </div>
 
@@ -326,7 +305,9 @@ export const Dashboard: React.FC = () => {
               {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
               {!searchMessage && (
                 <p className="mt-1 text-sm text-slate-400">
-                  {'Enter a suburb, company, or street to search.'}
+                  {searchMode === 'area'
+                    ? 'Generate leads for a suburb-level search area.'
+                    : 'Analyze one property with detailed roof and solar output.'}
                 </p>
               )}
             </div>

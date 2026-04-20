@@ -1,8 +1,11 @@
 import React, { useRef } from 'react';
 import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
+import { COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
 
 export interface SearchParams {
   query: string;
+  country?: string;
+  province?: string;
   place_id?: string;
   lat?: number;
   lng?: number;
@@ -13,10 +16,12 @@ export interface SearchParams {
 
 interface SearchPanelProps {
   params: SearchParams;
+  mode: 'area' | 'single-property';
+  showAdvanced: boolean;
   onParamsChange: (params: SearchParams) => void;
-  onSearchLeads: () => void;
-  onScanArea: () => void;
-  onSingleProperty: () => void;
+  onModeChange: (mode: 'area' | 'single-property') => void;
+  onToggleAdvanced: () => void;
+  onFindLeads: () => void;
   loading: boolean;
 }
 
@@ -24,10 +29,12 @@ const GOOGLE_LIBRARIES = ['places'];
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
+  mode,
+  showAdvanced,
   onParamsChange,
-  onSearchLeads,
-  onScanArea,
-  onSingleProperty,
+  onModeChange,
+  onToggleAdvanced,
+  onFindLeads,
   loading,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -39,6 +46,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   });
 
   const canSearch = !!params.query.trim();
+  const provinceOptions = PROVINCES_BY_COUNTRY[params.country || 'South Africa'] || [];
 
   const handlePlaceChanged = () => {
     const place = autocompleteRef.current?.getPlace();
@@ -67,9 +75,38 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-6">
+      <div className="flex gap-2 rounded-xl border border-slate-700 bg-slate-950/50 p-1">
+        <button
+          type="button"
+          onClick={() => onModeChange('area')}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+            mode === 'area' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          Area Search
+        </button>
+        <button
+          type="button"
+          onClick={() => onModeChange('single-property')}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+            mode === 'single-property'
+              ? 'bg-emerald-500 text-slate-950'
+              : 'text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          Single Property
+        </button>
+      </div>
+
       <div>
-        <h2 className="text-xl font-bold text-slate-100">Find Solar Leads</h2>
-        <p className="text-sm text-slate-400 mt-1">Search suburb, company, street, or area.</p>
+        <h2 className="text-xl font-bold text-slate-100">
+          {mode === 'area' ? 'Search Area' : 'Search Property'}
+        </h2>
+        <p className="text-sm text-slate-400 mt-1">
+          {mode === 'area'
+            ? 'Find viable commercial rooftops in this area.'
+            : 'Run a detailed roof and solar estimate.'}
+        </p>
       </div>
 
       <Autocomplete
@@ -81,66 +118,103 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search suburb / company / street / area"
+          placeholder={
+            mode === 'area'
+              ? 'Enter suburb here , eg. Montague Gardens...'
+              : 'Enter full address or business name...'
+          }
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           value={params.query}
           onChange={(e) => onParamsChange({ ...params, query: e.target.value })}
         />
       </Autocomplete>
 
-      <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-        <span className="bg-slate-700 px-2 py-1 rounded">Goodwood</span>
-        <span className="bg-slate-700 px-2 py-1 rounded">Makro Cape Gate</span>
-        <span className="bg-slate-700 px-2 py-1 rounded">Montague Gardens</span>
-        <span className="bg-slate-700 px-2 py-1 rounded">Parow Industrial</span>
-      </div>
+      <button
+        type="button"
+        onClick={onToggleAdvanced}
+        className="w-fit text-sm font-medium text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
+      >
+        Advanced Search
+      </button>
 
-      <div>
-        <label className="mb-2 block text-sm font-semibold text-slate-200">
-          Min Roof Size (sqm)
-        </label>
-        <input
-          type="number"
-          min={0}
-          step={10}
-          placeholder="120"
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
-          value={params.min_roof_sqm ?? ''}
-          onChange={(e) => {
-            const raw = e.target.value.trim();
-            const parsed = raw ? Number(raw) : undefined;
-            onParamsChange({
-              ...params,
-              min_roof_sqm:
-                parsed !== undefined && Number.isFinite(parsed)
-                  ? Math.max(0, Math.floor(parsed))
-                  : undefined,
-            });
-          }}
-        />
-      </div>
+      {showAdvanced && mode === 'area' && (
+        <div className="space-y-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-200">Country</label>
+            <select
+              title="Country"
+              value={params.country || 'South Africa'}
+              onChange={(e) =>
+                onParamsChange({
+                  ...params,
+                  country: e.target.value,
+                  province: '',
+                })
+              }
+              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+            >
+              {COUNTRIES.map((country) => (
+                <option key={country} value={country}>
+                  {country}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-200">
+              Province / State
+            </label>
+            <select
+              title="Province or state"
+              value={params.province || ''}
+              onChange={(e) => onParamsChange({ ...params, province: e.target.value })}
+              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
+            >
+              <option value="">Auto detect</option>
+              {provinceOptions.map((province) => (
+                <option key={province} value={province}>
+                  {province}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-200">
+              Min Roof Size (sqm)
+            </label>
+            <input
+              type="number"
+              title="Minimum roof size in square meters"
+              min={0}
+              step={10}
+              placeholder="Optional"
+              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+              value={params.min_roof_sqm ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                const parsed = raw ? Number(raw) : undefined;
+                onParamsChange({
+                  ...params,
+                  min_roof_sqm:
+                    parsed !== undefined && Number.isFinite(parsed)
+                      ? Math.max(0, Math.floor(parsed))
+                      : undefined,
+                });
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1">
         <button
-          onClick={onSearchLeads}
+          onClick={onFindLeads}
           disabled={loading || !canSearch}
           className="rounded-xl bg-emerald-500 py-3 text-sm font-bold uppercase tracking-wide text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? 'Searching...' : 'Search Leads'}
-        </button>
-        <button
-          onClick={onScanArea}
-          disabled={loading || !canSearch}
-          className="rounded-xl bg-blue-600 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Scan Area
-        </button>
-        <button
-          onClick={onSingleProperty}
-          disabled={loading || !canSearch}
-          className="rounded-xl bg-slate-600 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Single Property
+          {loading ? 'Working...' : mode === 'area' ? 'Generate Leads' : 'Analyze Property'}
         </button>
       </div>
     </div>
