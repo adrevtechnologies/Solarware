@@ -13,6 +13,7 @@ from .models import SearchArea, Prospect  # Import models to register with Base
 from .api import health
 from .api.search_real import router as search_real_router
 from .api.area_mass_search import router as area_mass_search_router
+from .api.places import router as places_router
 
 # Setup database
 try:
@@ -78,3 +79,4 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router)
 app.include_router(search_real_router)
 app.include_router(area_mass_search_router)
+app.include_router(places_router)

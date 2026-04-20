@@ -44,6 +44,32 @@ export const api = {
 
   areaMassSearch: (payload: AreaMassSearchRequest) =>
     apiClient.post<AreaMassSearchResponse>('/api/area-mass-search', payload),
+
+  placesAutocomplete: (payload: { input: string; session_token?: string; region_code?: string }) =>
+    apiClient.post<{
+      suggestions: Array<{
+        place_id: string;
+        main_text: string;
+        secondary_text: string;
+        full_text: string;
+      }>;
+    }>('/api/places/autocomplete', payload),
+
+  placeDetails: (placeId: string, sessionToken?: string) =>
+    apiClient.get<{
+      place_id: string;
+      formatted_address: string;
+      business_name: string;
+      lat?: number;
+      lng?: number;
+      city?: string;
+      province?: string;
+      country?: string;
+    }>(`/api/places/${placeId}`, {
+      params: {
+        session_token: sessionToken,
+      },
+    }),
 };
 
 export default apiClient;
