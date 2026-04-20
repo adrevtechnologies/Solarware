@@ -898,8 +898,8 @@ async def search_real_prospects(
 
                 image_bbox = None
                 if getattr(building, "nodes", None):
-                    image_url = get_satellite_image_url_for_polygon(building.nodes)
-                    image_bbox = get_padded_bbox_for_polygon(building.nodes, padding_ratio=0.10)
+                    image_url = get_satellite_image_url_for_polygon(building.nodes, padding_ratio=0.15)
+                    image_bbox = get_padded_bbox_for_polygon(building.nodes, padding_ratio=0.15)
                 else:
                     logger.debug("Skipping building %s due to missing polygon footprint", building.osm_id)
                     continue

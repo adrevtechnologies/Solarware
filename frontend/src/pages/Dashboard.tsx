@@ -92,6 +92,7 @@ export const Dashboard: React.FC = () => {
         formatted_address: searchParams.formatted_address,
         business_name: searchParams.business_name,
         radius_m: 50,
+        min_roof_sqm: searchParams.min_roof_sqm,
       };
       let response;
       try {

@@ -50,6 +50,11 @@ export interface SearchRequestV1 {
   lng?: number;
   formatted_address?: string;
   business_name?: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  radius_m?: number;
+  min_roof_sqm?: number;
 }
 
 export interface AreaMassSearchRequest {
