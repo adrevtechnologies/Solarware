@@ -9,7 +9,7 @@ import {
 
 // In production, set VITE_API_URL to the deployed backend URL.
 // In local dev, leave it empty and rely on Vite proxy.
-const rawApiUrl = import.meta.env.VITE_API_URL || '';
+const rawApiUrl = import.meta.env.VITE_API_URL || 'https://solarware-api.onrender.com';
 const API_URL = rawApiUrl.replace(/\/$/, '');
 
 const apiClient = axios.create({
