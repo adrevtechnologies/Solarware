@@ -53,7 +53,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
 
   useEffect(() => {
     const query = params.query.trim();
-    if (query.length < 2) {
+    if (query.length < 1) {
       setSuggestions([]);
       setLoadingSuggestions(false);
       return;
@@ -168,6 +168,10 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         <input
           type="text"
           placeholder={placeholder}
+          autoComplete="off"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="none"
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           value={params.query}
           onFocus={handleInputFocus}

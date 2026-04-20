@@ -55,7 +55,7 @@ def places_autocomplete(request: AutocompleteRequest):
         raise HTTPException(status_code=503, detail="Google Places key is not configured")
 
     query = (request.input or "").strip()
-    if len(query) < 2:
+    if len(query) < 1:
         return AutocompleteResponse(suggestions=[])
 
     try:
