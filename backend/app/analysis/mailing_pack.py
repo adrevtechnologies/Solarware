@@ -27,6 +27,8 @@ We prepared a visual concept for your property.
 
 Would you be open to a short discussion?
 
+If yes, reply with "quote" and we will send a tailored proposal with timelines.
+
 Regards,
 Solarware
 """
@@ -263,6 +265,15 @@ Solarware
         except Exception:
             c.setFont("Helvetica", 10)
             c.drawString(20 * mm, y, "Images unavailable for this pack run.")
+
+        y = 38 * mm
+        c.setFillColorRGB(0.08, 0.28, 0.16)
+        c.roundRect(20 * mm, y, 170 * mm, 18 * mm, 3 * mm, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(24 * mm, y + 11 * mm, "Ready to reduce electricity spend with rooftop solar?")
+        c.setFont("Helvetica", 9)
+        c.drawString(24 * mm, y + 5 * mm, "Reply to this proposal for a site assessment and formal quote request.")
 
         c.save()
 

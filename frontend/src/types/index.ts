@@ -35,6 +35,7 @@ export interface Prospect {
   savings_high: number;
   savings_potential_display: string; // "R xxx k – R xxx k / year"
   solar_score: number; // 0-100
+  lead_grade?: string;
   satellite_image_url: string;
   latitude: number;
   longitude: number;
@@ -43,13 +44,58 @@ export interface Prospect {
 }
 
 export interface SearchRequestV1 {
-  country: string;
-  province: string;
-  city: string;
-  suburb: string;
-  street_name?: string;
-  street_number?: string;
+  query: string;
+  place_id?: string;
+  lat?: number;
+  lng?: number;
+  formatted_address?: string;
+  business_name?: string;
+}
+
+export interface AreaMassSearchRequest {
+  query?: string;
+  place_id?: string;
+  center_lat?: number;
+  center_lng?: number;
+  min_latitude?: number;
+  max_latitude?: number;
+  min_longitude?: number;
+  max_longitude?: number;
   radius_m?: number;
+  tile_size_m?: number;
+  page?: number;
+  page_size?: number;
+  include_types?: string[];
+}
+
+export interface AreaMassSearchResult {
+  place_id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  types: string[];
+  business_type: string;
+  rating?: number;
+  user_ratings_total?: number;
+  business_status?: string;
+  website?: string;
+  email?: string;
+  phone?: string;
+  opening_hours?: string[];
+  estimated_roof_sqm: number;
+  estimated_annual_savings: number;
+  lead_score: number;
+  lead_grade: string;
+}
+
+export interface AreaMassSearchResponse {
+  results: AreaMassSearchResult[];
+  count: number;
+  total: number;
+  page: number;
+  page_size: number;
+  export_csv_url?: string;
 }
 
 export interface MailPack {

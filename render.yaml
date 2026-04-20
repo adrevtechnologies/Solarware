@@ -7,4 +7,4 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: CORS_ORIGINS
-        value: 'https://solarware.vercel.app,https://*.vercel.app'
+        value: 'https://solarware.adrevtechnologies.com,https://*.adrevtechnologies.com'

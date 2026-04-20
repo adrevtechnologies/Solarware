@@ -1,5 +1,11 @@
 import axios from 'axios';
-import { MailPack, Prospect, SearchRequestV1 } from '../types';
+import {
+  AreaMassSearchRequest,
+  AreaMassSearchResponse,
+  MailPack,
+  Prospect,
+  SearchRequestV1,
+} from '../types';
 
 // In production, set VITE_API_URL to the deployed backend URL.
 // In local dev, leave it empty and rely on Vite proxy.
@@ -35,6 +41,9 @@ export const api = {
 
   suggestCities: (payload: { country?: string; province?: string; query?: string }) =>
     apiClient.post<{ cities: string[] }>('/api/cities/suggest', payload),
+
+  areaMassSearch: (payload: AreaMassSearchRequest) =>
+    apiClient.post<AreaMassSearchResponse>('/api/area-mass-search', payload),
 };
 
 export default apiClient;

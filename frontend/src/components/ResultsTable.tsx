@@ -78,6 +78,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
               <th className="px-4 py-3 text-left font-semibold">Building Type</th>
               <th className="px-4 py-3 text-right font-semibold">Roof Size</th>
               <th className="px-4 py-3 text-right font-semibold">Panels</th>
+              <th className="px-4 py-3 text-center font-semibold">Lead Grade</th>
               <th className="px-4 py-3 text-center font-semibold">Preview</th>
               <th className="px-4 py-3 text-center font-semibold">Generate Mail Pack</th>
             </tr>
@@ -93,6 +94,11 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                 </td>
                 <td className="px-4 py-3 text-right text-slate-300">
                   {prospect.estimated_panel_count.toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="rounded-md bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-300">
+                    {prospect.lead_grade || 'Unrated'}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <button

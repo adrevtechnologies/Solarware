@@ -69,7 +69,7 @@ Or set in Vercel dashboard:
 
 Click "Deploy" - Vercel will build and deploy automatically.
 
-**Frontend URL:** `https://solarware.vercel.app` (example - your URL will be different)
+**Frontend URL:** `https://solarware.adrevtechnologies.com` (production domain)
 
 ---
 

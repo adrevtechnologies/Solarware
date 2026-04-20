@@ -5,6 +5,10 @@ FREE - NO API KEY REQUIRED
 import requests
 import logging
 import math
+import hashlib
+import json
+import time
+from pathlib import Path
 from typing import Optional, Dict, Tuple, List
 from pydantic import BaseModel
 from ..core.config import get_settings
@@ -13,6 +17,35 @@ logger = logging.getLogger(__name__)
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org"
 HEADERS = {"User-Agent": "Solarware/1.0"}
+
+
+def _geo_cache_root() -> Path:
+    root = Path(get_settings().OUTPUT_BASE_PATH).resolve() / "cache" / "geocode"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _geo_cache_key(provider: str, query: str) -> str:
+    return hashlib.sha256(f"{provider}|{query}".encode("utf-8")).hexdigest()[:32]
+
+
+def _geo_cache_load(provider: str, query: str, ttl_s: int = 7 * 24 * 3600) -> Optional[Dict]:
+    cache_file = _geo_cache_root() / f"{_geo_cache_key(provider, query)}.json"
+    if not cache_file.exists():
+        return None
+    try:
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        if (time.time() - payload.get("ts", 0)) > ttl_s:
+            return None
+        return payload.get("data")
+    except Exception:
+        return None
+
+
+def _geo_cache_save(provider: str, query: str, data: Dict) -> None:
+    cache_file = _geo_cache_root() / f"{_geo_cache_key(provider, query)}.json"
+    payload = {"ts": time.time(), "data": data}
+    cache_file.write_text(json.dumps(payload), encoding="utf-8")
 
 
 class GeoLocation(BaseModel):
@@ -45,6 +78,13 @@ def geocode_address(
     parts = [address, suburb, city, province, postcode, country or "South Africa"]
     query = ", ".join([p.strip() for p in parts if p and p.strip()])
 
+    cached = _geo_cache_load("nominatim", query)
+    if cached:
+        try:
+            return GeoLocation(**cached)
+        except Exception:
+            pass
+
     try:
         response = requests.get(
             f"{NOMINATIM_URL}/search",
@@ -62,7 +102,7 @@ def geocode_address(
         top_result = results[0]
         address_details = top_result.get("address", {})
 
-        return GeoLocation(
+        location = GeoLocation(
             latitude=float(top_result["lat"]),
             longitude=float(top_result["lon"]),
             address=top_result.get("display_name", ""),
@@ -75,6 +115,8 @@ def geocode_address(
             country=address_details.get("country", "South Africa"),
             bbox=tuple(float(x) for x in top_result["boundingbox"])
         )
+        _geo_cache_save("nominatim", query, location.model_dump())
+        return location
     except Exception as e:
         logger.error(f"Nominatim geocoding error for '{query}': {e}")
         return None
@@ -90,12 +132,19 @@ def geocode_address_google(
 ) -> Optional[GeoLocation]:
     """Convert address to coordinates using Google Geocoding when API key is configured."""
     settings = get_settings()
-    api_key = settings.GOOGLE_MAPS_API_KEY
+    api_key = settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY
     if not api_key:
         return None
 
     parts = [address, suburb, city, province, postcode, country or "South Africa"]
     query = ", ".join([p.strip() for p in parts if p and p.strip()])
+
+    cached = _geo_cache_load("google", query)
+    if cached:
+        try:
+            return GeoLocation(**cached)
+        except Exception:
+            pass
 
     try:
         response = requests.get(
@@ -139,7 +188,7 @@ def geocode_address_google(
             lon = float(location["lng"])
             bbox = (lat - 0.0005, lat + 0.0005, lon - 0.0005, lon + 0.0005)
 
-        return GeoLocation(
+        location = GeoLocation(
             latitude=float(location["lat"]),
             longitude=float(location["lng"]),
             address=result.get("formatted_address", query),
@@ -152,6 +201,8 @@ def geocode_address_google(
             country=comp_map.get("country", country or "South Africa"),
             bbox=bbox,
         )
+        _geo_cache_save("google", query, location.model_dump())
+        return location
     except Exception as e:
         logger.warning(f"Google geocoding error for '{query}': {e}")
         return None
@@ -166,7 +217,7 @@ def suggest_areas_google(
 ) -> List[str]:
     """Suggest suburb/area names using Google Places Autocomplete when API key is configured."""
     settings = get_settings()
-    api_key = settings.GOOGLE_MAPS_API_KEY
+    api_key = settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY
     if not api_key:
         return []
 
@@ -233,7 +284,7 @@ def suggest_cities_google(
 ) -> List[str]:
     """Suggest city names using Google Places Autocomplete when API key is configured."""
     settings = get_settings()
-    api_key = settings.GOOGLE_MAPS_API_KEY
+    api_key = settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY
     if not api_key:
         return []
 

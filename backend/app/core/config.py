@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # Geocoding
     NOMINATIM_USER_AGENT: str = "solarware/0.1.0"
 
-    # Contact Enrichment
+    # Google APIs (backend)
+    # Keep both names for compatibility with existing deployments.
     GOOGLE_MAPS_API_KEY: str = ""
+    GOOGLE_SERVER_KEY: str = ""
     GOOGLE_SEARCH_API_KEY: str = ""
     GOOGLE_SEARCH_ENGINE_ID: str = ""
 

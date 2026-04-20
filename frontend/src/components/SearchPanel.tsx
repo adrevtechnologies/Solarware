@@ -96,7 +96,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       </div>
 
       <div>
-        <label className="mb-2 block text-sm font-semibold text-slate-200">Min Roof Size (sqm)</label>
+        <label className="mb-2 block text-sm font-semibold text-slate-200">
+          Min Roof Size (sqm)
+        </label>
         <input
           type="number"
           min={0}
@@ -109,7 +111,10 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
             const parsed = raw ? Number(raw) : undefined;
             onParamsChange({
               ...params,
-              min_roof_sqm: parsed !== undefined && Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : undefined,
+              min_roof_sqm:
+                parsed !== undefined && Number.isFinite(parsed)
+                  ? Math.max(0, Math.floor(parsed))
+                  : undefined,
             });
           }}
         />
