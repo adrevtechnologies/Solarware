@@ -15,7 +15,6 @@ export const Dashboard: React.FC = () => {
     province: '',
   });
   const [searchMode, setSearchMode] = useState<'area' | 'single-property'>('area');
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [sortBy, setSortBy] = useState<ResultsSort>('largest_roof');
 
   const [results, setResults] = useState<Prospect[]>([]);
@@ -290,10 +289,8 @@ export const Dashboard: React.FC = () => {
             <SearchPanel
               params={searchParams}
               mode={searchMode}
-              showAdvanced={showAdvanced}
               onParamsChange={setSearchParams}
               onModeChange={setSearchMode}
-              onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
               onFindLeads={handleModeSearch}
               loading={loading}
             />

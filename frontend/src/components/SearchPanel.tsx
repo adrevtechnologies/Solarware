@@ -1,9 +1,8 @@
-import React, { useRef } from 'react';
-import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
-import { COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface SearchParams {
   query: string;
+  city?: string;
   country?: string;
   province?: string;
   place_id?: string;
@@ -17,61 +16,187 @@ export interface SearchParams {
 interface SearchPanelProps {
   params: SearchParams;
   mode: 'area' | 'single-property';
-  showAdvanced: boolean;
   onParamsChange: (params: SearchParams) => void;
   onModeChange: (mode: 'area' | 'single-property') => void;
-  onToggleAdvanced: () => void;
   onFindLeads: () => void;
   loading: boolean;
 }
 
-const GOOGLE_LIBRARIES = ['places'];
+interface PlacesSuggestion {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
+}
+
+interface PlacesAddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
   mode,
-  showAdvanced,
   onParamsChange,
   onModeChange,
-  onToggleAdvanced,
   onFindLeads,
   loading,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY,
-    libraries: GOOGLE_LIBRARIES as ['places'],
-  });
+  const blurTimerRef = useRef<number | null>(null);
+  const sessionTokenRef = useRef<string>(crypto.randomUUID());
+  const [suggestions, setSuggestions] = useState<PlacesSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const apiKey = import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY as string | undefined;
 
   const canSearch = !!params.query.trim();
-  const provinceOptions = PROVINCES_BY_COUNTRY[params.country || 'South Africa'] || [];
 
-  const handlePlaceChanged = () => {
-    const place = autocompleteRef.current?.getPlace();
-    if (!place || !place.geometry || !place.place_id) {
+  const placeholder = useMemo(
+    () =>
+      mode === 'area'
+        ? 'Enter suburb / area / city'
+        : 'Enter full address or business name...',
+    [mode]
+  );
+
+  useEffect(() => {
+    const query = params.query.trim();
+    if (!apiKey || query.length < 2) {
+      setSuggestions([]);
+      setLoadingSuggestions(false);
       return;
     }
 
-    onParamsChange({
-      ...params,
-      query: place.formatted_address || place.name || params.query,
-      place_id: place.place_id,
-      lat: place.geometry.location?.lat(),
-      lng: place.geometry.location?.lng(),
-      formatted_address: place.formatted_address || '',
-      business_name: place.name || '',
-    });
+    const timer = window.setTimeout(async () => {
+      try {
+        setLoadingSuggestions(true);
+        const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask':
+              'suggestions.placePrediction.place,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
+          },
+          body: JSON.stringify({
+            input: query,
+            languageCode: 'en',
+            regionCode: 'za',
+            sessionToken: sessionTokenRef.current,
+          }),
+        });
+
+        if (!response.ok) {
+          setSuggestions([]);
+          return;
+        }
+
+        const payload = await response.json();
+        const mapped: PlacesSuggestion[] = (payload?.suggestions || [])
+          .map((item: any) => item?.placePrediction)
+          .filter(Boolean)
+          .map((prediction: any) => {
+            const placeName = String(prediction.place || '');
+            const placeId = placeName.replace('places/', '');
+            const mainText = prediction.structuredFormat?.mainText?.text || prediction.text?.text || '';
+            const secondaryText = prediction.structuredFormat?.secondaryText?.text || '';
+            const fullText = prediction.text?.text || [mainText, secondaryText].filter(Boolean).join(', ');
+            return {
+              placeId,
+              mainText,
+              secondaryText,
+              fullText,
+            };
+          })
+          .filter((s: PlacesSuggestion) => !!s.placeId);
+
+        setSuggestions(mapped);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [apiKey, params.query]);
+
+  const extractComponent = (components: PlacesAddressComponent[], type: string): string | undefined => {
+    const found = components.find((c) => (c.types || []).includes(type));
+    return found?.longText || found?.shortText;
   };
 
-  if (!isLoaded) {
-    return (
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 text-slate-300">
-        Loading Google Maps...
-      </div>
-    );
-  }
+  const handleSuggestionSelect = async (suggestion: PlacesSuggestion) => {
+    if (!apiKey) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://places.googleapis.com/v1/places/${suggestion.placeId}?languageCode=en&regionCode=za`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask':
+              'id,displayName,formattedAddress,location,addressComponents',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      const place = await response.json();
+      const components = (place.addressComponents || []) as PlacesAddressComponent[];
+
+      const city =
+        extractComponent(components, 'locality') ||
+        extractComponent(components, 'postal_town') ||
+        extractComponent(components, 'administrative_area_level_2');
+
+      const province = extractComponent(components, 'administrative_area_level_1');
+      const country = extractComponent(components, 'country') || 'South Africa';
+
+      onParamsChange({
+        ...params,
+        query: place.formattedAddress || suggestion.fullText,
+        place_id: place.id || suggestion.placeId,
+        formatted_address: place.formattedAddress || suggestion.fullText,
+        business_name: place.displayName?.text || '',
+        lat: place.location?.latitude,
+        lng: place.location?.longitude,
+        city,
+        province,
+        country,
+      });
+
+      setShowSuggestions(false);
+      setSuggestions([]);
+      sessionTokenRef.current = crypto.randomUUID();
+    } catch {
+      // Keep existing query untouched on transient API failures.
+    }
+  };
+
+  const handleInputBlur = () => {
+    blurTimerRef.current = window.setTimeout(() => {
+      setShowSuggestions(false);
+    }, 140);
+  };
+
+  const handleInputFocus = () => {
+    if (blurTimerRef.current) {
+      window.clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    if (suggestions.length > 0) {
+      setShowSuggestions(true);
+    }
+  };
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-6">
@@ -109,104 +234,46 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         </p>
       </div>
 
-      <Autocomplete
-        onLoad={(autocomplete) => {
-          autocompleteRef.current = autocomplete;
-        }}
-        onPlaceChanged={handlePlaceChanged}
-      >
+      <div className="relative">
         <input
           ref={inputRef}
           type="text"
-          placeholder={
-            mode === 'area'
-              ? 'Enter suburb here , eg. Montague Gardens...'
-              : 'Enter full address or business name...'
-          }
+          placeholder={placeholder}
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           value={params.query}
-          onChange={(e) => onParamsChange({ ...params, query: e.target.value })}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
+          onChange={(e) => {
+            onParamsChange({ ...params, query: e.target.value });
+            setShowSuggestions(true);
+          }}
         />
-      </Autocomplete>
-
-      <button
-        type="button"
-        onClick={onToggleAdvanced}
-        className="w-fit text-sm font-medium text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
-      >
-        Advanced Search
-      </button>
-
-      {showAdvanced && mode === 'area' && (
-        <div className="space-y-4 rounded-xl border border-slate-700 bg-slate-950/40 p-4">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-200">Country</label>
-            <select
-              title="Country"
-              value={params.country || 'South Africa'}
-              onChange={(e) =>
-                onParamsChange({
-                  ...params,
-                  country: e.target.value,
-                  province: '',
-                })
-              }
-              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
-            >
-              {COUNTRIES.map((country) => (
-                <option key={country} value={country}>
-                  {country}
-                </option>
+        {showSuggestions && (loadingSuggestions || suggestions.length > 0) && (
+          <div className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+            {loadingSuggestions && (
+              <div className="px-4 py-3 text-sm text-slate-400">Searching places...</div>
+            )}
+            {!loadingSuggestions &&
+              suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.placeId}
+                  type="button"
+                  onMouseDown={() => {
+                    void handleSuggestionSelect(suggestion);
+                  }}
+                  className="w-full border-b border-slate-800 px-4 py-3 text-left last:border-b-0 hover:bg-slate-800"
+                >
+                  <div className="text-sm font-semibold text-slate-100">{suggestion.mainText}</div>
+                  {!!suggestion.secondaryText && (
+                    <div className="text-xs text-slate-400">{suggestion.secondaryText}</div>
+                  )}
+                </button>
               ))}
-            </select>
           </div>
+        )}
+      </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-200">
-              Province / State
-            </label>
-            <select
-              title="Province or state"
-              value={params.province || ''}
-              onChange={(e) => onParamsChange({ ...params, province: e.target.value })}
-              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 focus:border-emerald-400 focus:outline-none"
-            >
-              <option value="">Auto detect</option>
-              {provinceOptions.map((province) => (
-                <option key={province} value={province}>
-                  {province}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-200">
-              Min Roof Size (sqm)
-            </label>
-            <input
-              type="number"
-              title="Minimum roof size in square meters"
-              min={0}
-              step={10}
-              placeholder="Optional"
-              className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
-              value={params.min_roof_sqm ?? ''}
-              onChange={(e) => {
-                const raw = e.target.value.trim();
-                const parsed = raw ? Number(raw) : undefined;
-                onParamsChange({
-                  ...params,
-                  min_roof_sqm:
-                    parsed !== undefined && Number.isFinite(parsed)
-                      ? Math.max(0, Math.floor(parsed))
-                      : undefined,
-                });
-              }}
-            />
-          </div>
-        </div>
-      )}
+      <span className="w-fit text-sm font-medium text-slate-300">Advanced Search</span>
 
       <div className="grid grid-cols-1">
         <button
