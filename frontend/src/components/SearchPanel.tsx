@@ -43,6 +43,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   const [suggestions, setSuggestions] = useState<PlacesSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionRequestTick, setSuggestionRequestTick] = useState(0);
 
   const canSearch = !!params.query.trim();
   const placeholder = useMemo(
@@ -84,7 +85,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [params.query]);
+  }, [params.query, suggestionRequestTick]);
 
   const handleSuggestionSelect = async (suggestion: PlacesSuggestion) => {
     try {
@@ -123,8 +124,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       window.clearTimeout(blurTimerRef.current);
       blurTimerRef.current = null;
     }
-    if (suggestions.length > 0) {
-      setShowSuggestions(true);
+    setShowSuggestions(true);
+    if (params.query.trim().length >= 1) {
+      setSuggestionRequestTick((tick) => tick + 1);
     }
   };
 
