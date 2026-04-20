@@ -7,9 +7,15 @@ import { MailPackModal } from '../components/MailPackModal';
 import { api } from '../services/api';
 
 export const Dashboard: React.FC = () => {
-  const apiBase = (import.meta.env.VITE_API_URL || 'https://solarware-api.onrender.com').replace(
-    /\/$/, ''
-  );
+  const fallbackApiUrl = 'https://solarware-api.onrender.com';
+  const envApiUrl = (import.meta.env.VITE_API_URL || '').trim();
+  const apiBase = (
+    envApiUrl &&
+    !/solarware\.adrevtechnologies\.com/i.test(envApiUrl) &&
+    /^https?:\/\//i.test(envApiUrl)
+      ? envApiUrl
+      : fallbackApiUrl
+  ).replace(/\/$/, '');
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
     query: '',
