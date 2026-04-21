@@ -12,8 +12,9 @@ class AreaMassSearchRequest(BaseModel):
     max_latitude: Optional[float] = None
     min_longitude: Optional[float] = None
     max_longitude: Optional[float] = None
-    radius_m: int = Field(default=1600, ge=300, le=10000)
-    tile_size_m: int = Field(default=500, ge=250, le=2000)
+    # Allow smaller requests for single-property style calls from the frontend.
+    radius_m: int = Field(default=1600, ge=50, le=10000)
+    tile_size_m: int = Field(default=500, ge=100, le=2000)
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=200)
     include_types: List[str] = Field(default_factory=lambda: ["store", "point_of_interest"])
