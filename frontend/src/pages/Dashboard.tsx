@@ -10,13 +10,11 @@ export const Dashboard: React.FC = () => {
   const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
-    mode: 'area',
     country: 'South Africa',
     province: 'Western Cape',
     city: 'Cape Town',
     area: 'Goodwood',
-    radiusM: 1500,
-    propertyQuery: '',
+    minRoofSqm: 150,
   });
 
   const [results, setResults] = useState<Prospect[]>([]);
@@ -31,85 +29,67 @@ export const Dashboard: React.FC = () => {
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  const splitStreetInput = (
+    street?: string,
+    area?: string,
+    city?: string
+  ): { street_number?: string; street_name?: string } => {
+    const raw = (street || '').trim();
+    if (!raw) {
+      return { street_number: undefined, street_name: undefined };
+    }
+
+    const collapseSpaces = (value: string) => value.replace(/\s+/g, ' ').trim();
+    const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let cleaned = collapseSpaces(raw.replace(/,+/g, ', '));
+
+    // Remove trailing locality hints when users paste full address into street field.
+    const localityParts = [area, city].map((item) => (item || '').trim()).filter(Boolean);
+    for (const part of localityParts) {
+      const partEscaped = escapeRegex(part);
+      cleaned = cleaned.replace(new RegExp(`(?:,\\s*|\\s+)${partEscaped}$`, 'i'), '');
+    }
+    cleaned = collapseSpaces(cleaned.replace(/,$/, ''));
+
+    const firstSpace = cleaned.indexOf(' ');
+    if (firstSpace <= 0) {
+      return { street_number: undefined, street_name: cleaned };
+    }
+
+    return {
+      street_number: cleaned.slice(0, firstSpace).trim(),
+      street_name: cleaned.slice(firstSpace + 1).trim(),
+    };
+  };
+
   const handleSearch = async () => {
     setLoading(true);
     setSearchMessage('');
 
     try {
-      if (searchParams.mode === 'area') {
-        const selected = searchParams.selectedAreaPlace;
-        if (!selected) {
-          setResults([]);
-          setSearchMessage('Select an area from the Google dropdown before generating leads.');
-          return;
-        }
-
-        const response = await api.areaSearch({
-          place_id: selected.place_id,
-          query: selected.formatted_address,
-          lat: selected.lat,
-          lng: selected.lng,
-          radius_m: searchParams.radiusM || 1500,
-        });
-
-        const mapped: Prospect[] = (response.data.results || []).map((lead) => ({
-          lead_id: lead.lead_id,
-          address: lead.address,
-          suburb: selected.formatted_address,
-          city: selected.city || searchParams.city,
-          business_name: lead.name,
-          building_type: lead.building_type,
-          roof_area_sqm: lead.roof_area_sqm,
-          estimated_panel_count: 0,
-          capacity_low_kw: 0,
-          capacity_high_kw: 0,
-          annual_kwh: 0,
-          savings_low: 0,
-          savings_high: 0,
-          savings_potential_display: '',
-          solar_score: lead.score,
-          latitude: lead.lat,
-          longitude: lead.lng,
-        }));
-
-        setResults(mapped);
-        setSearchMessage(`Found ${response.data.count} leads in ${selected.formatted_address}.`);
-        return;
-      }
-
-      const selectedProperty = searchParams.selectedPropertyPlace;
-      if (!selectedProperty) {
-        setResults([]);
-        setSearchMessage('Select a property from the Google dropdown before analyzing.');
-        return;
-      }
-
-      const propertyResponse = await api.propertySearch({
-        place_id: selectedProperty.place_id,
-        query: searchParams.propertyQuery || selectedProperty.formatted_address,
-      });
-      const d = propertyResponse.data;
-      const oneResult: Prospect = {
-        lead_id: d.lead_id,
-        address: d.address,
-        suburb: selectedProperty.formatted_address,
-        city: selectedProperty.city || searchParams.city,
-        business_name: d.name,
-        building_type: d.building_type,
-        roof_area_sqm: d.roof_area_sqm,
-        estimated_panel_count: d.panel_count,
-        capacity_low_kw: d.capacity_kw,
-        capacity_high_kw: d.capacity_kw,
-        annual_kwh: d.annual_kwh,
-        savings_low: d.savings_year,
-        savings_high: d.savings_year,
-        savings_potential_display: `R ${Math.round(d.savings_year).toLocaleString()} / year`,
-        solar_score: d.score,
-        latitude: d.lat,
-        longitude: d.lng,
+      const streetParts = splitStreetInput(
+        searchParams.street,
+        searchParams.area,
+        searchParams.city
+      );
+      const payload = {
+        mode: streetParts.street_name ? 'address' : 'area',
+        country: searchParams.country,
+        province: searchParams.province,
+        city: searchParams.city,
+        suburb: searchParams.area,
+        street_number: streetParts.street_number,
+        street_name: streetParts.street_name,
+        postcode: searchParams.postalCode,
+        radius_m: streetParts.street_name ? 300 : 1500,
+        include_residential: false,
+        min_roof_sqm: searchParams.minRoofSqm || 150,
       };
-      setResults([oneResult]);
-      setSearchMessage(`Analyzed property: ${d.name}`);
+
+      const response = await api.searchProspects(payload);
+      setResults(response.data.results || []);
+      setSearchMessage(response.data.message || '');
     } catch (error) {
       setResults([]);
       setSearchMessage(
@@ -142,7 +122,8 @@ export const Dashboard: React.FC = () => {
   const handleGenerateMailPack = async (prospect: Prospect) => {
     try {
       setGeneratingPackId(prospect.lead_id);
-      const response = await api.generateMailPack(prospect.lead_id);
+      const enriched = await api.enrichLead(prospect);
+      const response = await api.generateMailPack(enriched.data.lead_id);
       const pack = response.data;
 
       const withAbsoluteUrls: MailPack = {
@@ -164,7 +145,7 @@ export const Dashboard: React.FC = () => {
       };
 
       setMailPack(withAbsoluteUrls);
-      setSelectedProspect(prospect);
+      setSelectedProspect(enriched.data);
       setMailPackOpen(true);
       setImageModalOpen(false);
     } catch (error) {
@@ -226,9 +207,9 @@ export const Dashboard: React.FC = () => {
               {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
               {!searchMessage && (
                 <p className="mt-1 text-sm text-slate-400">
-                  {searchParams.mode === 'area'
-                    ? `Area mode active for ${searchParams.area || 'selected area'}.`
-                    : 'Single Property mode active.'}
+                  {searchParams.street?.trim()
+                    ? 'Exact address mode active.'
+                    : `Area mode active for ${searchParams.area}, ${searchParams.city}.`}
                 </p>
               )}
             </div>
