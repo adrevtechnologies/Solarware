@@ -152,7 +152,11 @@ export const Dashboard: React.FC = () => {
     setSearchMessage('Generating area leads...');
 
     try {
-      if (searchParams.lat === undefined || searchParams.lng === undefined || !searchParams.place_id) {
+      if (
+        searchParams.lat === undefined ||
+        searchParams.lng === undefined ||
+        !searchParams.place_id
+      ) {
         setResults([]);
         setSearchMessage('Please select the area from Google suggestions first.');
         return;
@@ -273,7 +277,9 @@ export const Dashboard: React.FC = () => {
         <header className="mb-8 flex min-h-[120px] w-full flex-row items-center gap-8 rounded-2xl bg-white px-8">
           <img src="/logo.png" alt="Solarware logo" className="h-32 w-auto object-contain" />
           <div className="flex flex-col justify-center">
-            <h1 className="mb-1 text-2xl font-bold text-slate-900 sm:text-3xl">Your AI Solar Sales Rep</h1>
+            <h1 className="mb-1 text-2xl font-bold text-slate-900 sm:text-3xl">
+              Your AI Solar Sales Rep
+            </h1>
             <p className="max-w-xl text-base text-slate-700 sm:text-lg">
               Find qualified roof owners, generate proposals,{' '}
               <span className="whitespace-nowrap">book more deals automatically.</span>

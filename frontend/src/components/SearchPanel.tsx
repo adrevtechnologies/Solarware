@@ -41,7 +41,8 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY,
+    googleMapsApiKey:
+      import.meta.env.VITE_GOOGLE_MAPS_KEY || import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '',
     libraries: GOOGLE_LIBRARIES as ['places'],
   });
 

@@ -631,13 +631,77 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
             ranked, _, _ = service.search_area(area_req)
         except ValueError as resolve_error:
             logger.warning("Area search bounds resolution failed for '%s': %s", center_query, resolve_error)
+            # Fallback for typed-area frontend flow: use text search even when area bounds cannot resolve.
+            settings = get_settings()
+            places = GooglePlacesClient(settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY)
+            text_rows = places.search_text(center_query, max_pages=1)
+
+            fallback_results: List[SolarProspect] = []
+            for row in text_rows:
+                try:
+                    geometry = (row.get("geometry") or {}).get("location") or {}
+                    lat = geometry.get("lat")
+                    lng = geometry.get("lng")
+                    if lat is None or lng is None:
+                        continue
+
+                    pid = row.get("place_id") or f"text-{lat}-{lng}"
+                    business_type = ((row.get("types") or ["commercial"])[0])
+                    base_roof = 650.0
+                    if "warehouse" in (row.get("types") or []) or "industrial" in (row.get("types") or []):
+                        base_roof = 1800.0
+                    elif "shopping_mall" in (row.get("types") or []) or "supermarket" in (row.get("types") or []):
+                        base_roof = 2400.0
+
+                    if base_roof < min_roof:
+                        continue
+
+                    stats = get_solar_stats(base_roof, business_type, province=request.province or "")
+                    fallback_results.append(
+                        SolarProspect(
+                            lead_id=pid,
+                            address=row.get("formatted_address") or row.get("name") or center_query,
+                            suburb=request.suburb or None,
+                            city=request.city or None,
+                            business_name=row.get("name"),
+                            building_type=business_type,
+                            website=None,
+                            phone=None,
+                            email=None,
+                            roof_area_sqm=stats["roof_area_sqm"],
+                            estimated_panel_count=stats["estimated_panel_count"],
+                            capacity_low_kw=stats["capacity_low_kw"],
+                            capacity_high_kw=stats["capacity_high_kw"],
+                            annual_kwh=stats["annual_kwh_mid"],
+                            savings_low=stats["savings_low"],
+                            savings_high=stats["savings_high"],
+                            savings_potential_display=(
+                                f"R {int(stats['savings_low'])//1000}k - "
+                                f"R {int(stats['savings_high'])//1000}k / year"
+                            ),
+                            solar_score=stats["solar_score"],
+                            lead_grade=_lead_grade_from_score(stats["solar_score"]),
+                            satellite_image_url=None,
+                            latitude=float(lat),
+                            longitude=float(lng),
+                        )
+                    )
+                except Exception as fallback_row_error:
+                    logger.warning("Skipping fallback text lead due to parse error: %s", fallback_row_error)
+                    continue
+
             return SearchResponse(
-                results=[],
-                count=0,
+                results=fallback_results,
+                count=len(fallback_results),
                 search_area=center_query,
                 message=(
-                    "Area could not be resolved to a search region. "
-                    "Please refine suburb/city and try again."
+                    f"Found {len(fallback_results)} leads in {center_query}. "
+                    "Fallback text scan was used for this area."
+                    if fallback_results
+                    else (
+                        "Area could not be resolved to a search region. "
+                        "Please refine suburb/city and try again."
+                    )
                 ),
             )
 
