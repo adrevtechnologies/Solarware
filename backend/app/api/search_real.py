@@ -382,10 +382,22 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
             radius_m=max(300, request.radius_m),
             tile_size_m=500,
             page=1,
-            page_size=40,
+            page_size=25,
         )
         service = AreaMassSearchService()
-        ranked, _, _ = service.search_area(area_req)
+        try:
+            ranked, _, _ = service.search_area(area_req)
+        except ValueError as resolve_error:
+            logger.warning("Area search bounds resolution failed for '%s': %s", center_query, resolve_error)
+            return SearchResponse(
+                results=[],
+                count=0,
+                search_area=center_query,
+                message=(
+                    "Area could not be resolved to a search region. "
+                    "Please refine suburb/city and try again."
+                ),
+            )
 
         results: List[SolarProspect] = []
         for row in ranked:

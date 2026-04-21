@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+from requests import RequestException
 
 
 class GooglePlacesClient:
@@ -37,10 +38,14 @@ class GooglePlacesClient:
         cached = self._cache_get(cache_key)
         if cached is not None:
             return cached
-        response = requests.get(url, params=base_params, timeout=timeout)
-        response.raise_for_status()
-        payload = response.json()
-        return self._cache_set(cache_key, payload)
+        try:
+            response = requests.get(url, params=base_params, timeout=timeout)
+            response.raise_for_status()
+            payload = response.json()
+            return self._cache_set(cache_key, payload)
+        except RequestException:
+            # Return a safe payload so callers can keep processing instead of failing the whole search.
+            return {"status": "REQUEST_ERROR", "results": [], "result": {}}
 
     def search_nearby(
         self,
@@ -112,7 +117,7 @@ class GooglePlacesClient:
                 "user_ratings_total",
             ]
         )
-        payload = self._request(self._details_url, {"place_id": place_id, "fields": fields})
+        payload = self._request(self._details_url, {"place_id": place_id, "fields": fields}, timeout=6)
         return payload.get("result", {})
 
     def discover_website_email(self, website: Optional[str]) -> Optional[str]:
@@ -120,7 +125,9 @@ class GooglePlacesClient:
         if not website:
             return None
         try:
-            response = requests.get(website, timeout=8, headers={"User-Agent": "Solarware/1.0"})
+            if not website.startswith(("http://", "https://")):
+                return None
+            response = requests.get(website, timeout=3, headers={"User-Agent": "Solarware/1.0"})
             response.raise_for_status()
             text = response.text[:200000]
             matches = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)

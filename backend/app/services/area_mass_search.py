@@ -303,7 +303,10 @@ class AreaMassSearchService:
                 logger.info("Area mass enriched cap reached: %s", max_enriched)
                 break
 
-            details = self.places.place_details(pid)
+            try:
+                details = self.places.place_details(pid)
+            except Exception:
+                details = {}
             merged = dict(row)
             merged.update({k: v for k, v in details.items() if v is not None})
 
@@ -329,7 +332,7 @@ class AreaMassSearchService:
                 opening_hours = list(merged["opening_hours"]["weekday_text"])
 
             website = merged.get("website")
-            discovered_email = self.places.discover_website_email(website)
+            discovered_email = None
 
             business_type = types[0] if types else "point_of_interest"
 
