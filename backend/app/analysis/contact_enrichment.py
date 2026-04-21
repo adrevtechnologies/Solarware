@@ -47,7 +47,7 @@ class ContactEnricher:
             # Try multiple enrichment sources in parallel
             tasks = [
                 ContactEnricher._enrich_from_google_maps(address, google_maps_api_key),
-                ContactEnricher._enrich_from_osm(address),
+                ContactEnricher._enrich_from_map_data(address),
                 ContactEnricher._enrich_from_web_search(address),
             ]
             
@@ -97,9 +97,9 @@ class ContactEnricher:
         return None
 
     @staticmethod
-    async def _enrich_from_osm(address: str) -> Optional[Dict]:
-        """Enrich from OpenStreetMap."""
-        logger.info("OSM contact enrichment integration not enabled in MVP")
+    async def _enrich_from_map_data(address: str) -> Optional[Dict]:
+        """Enrich from map data providers."""
+        logger.info("Map data enrichment integration not enabled in MVP")
         return None
 
     @staticmethod

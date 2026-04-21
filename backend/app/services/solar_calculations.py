@@ -1,7 +1,7 @@
 """
 Real Solar Calculations Engine
 Based on:
-- Roof area polygons from OSM
+- Roof area estimates from map providers
 - Building type (affects usable roof %)
 - South African solar yields by region
 - Real tariff scenarios (no installation pricing)
@@ -46,7 +46,7 @@ def get_regional_yield(province: str = None) -> int:
 
 def get_roof_usable_factor(building_type: str) -> float:
     """Get percentage of roof usable for solar (0.0 - 1.0)"""
-    return ROOF_USABLE_FACTORS.get(building_type, 0.60)
+    return ROOF_USABLE_FACTOR
 
 
 def calculate_solar_capacity(roof_area_sqm: float, building_type: str) -> Tuple[float, float]:

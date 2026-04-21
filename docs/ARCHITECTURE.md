@@ -50,7 +50,7 @@
 │  ├─ Google Earth Engine (satellite imagery)               │  │
 │  ├─ Sentinel Hub (satellite imagery)                      │  │
 │  ├─ Google Maps API (geocoding & business data)          │  │
-│  ├─ OpenStreetMap Nominatim (free geocoding)            │  │
+│  ├─ Google Geocoding API (address geocoding)            │  │
 │  ├─ Google Custom Search (web enrichment)                │  │
 │  └─ Email Services (SMTP, SendGrid, AWS SES)            │  │
 └─────────────────────────────────────────────────────────────┘
@@ -72,7 +72,7 @@
 
 3. **Contact Enrichment**
    - Parallel queries to multiple sources
-   - Geocoding with fallbacks (Google → OSM → manual flag)
+   - Geocoding with Google APIs and manual fallback flag
    - Store in `contacts` table with confidence scores
    - Flag incomplete data for manual research
 
@@ -172,7 +172,7 @@ elif via == "my_service":
 # Example: contact enrichment with multiple sources
 tasks = [
     enrich_from_google_maps(address),      # May fail
-    enrich_from_osm(address),              # May fail
+   enrich_from_map_data(address),         # May fail
     enrich_from_web_search(address),       # May fail
 ]
 

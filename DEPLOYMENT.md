@@ -110,7 +110,7 @@ curl -X POST https://your-backend-url/api/search \
 {
   "results": [
     {
-      "osm_id": "way/XXXXX",
+      "lead_id": "place/XXXXX",
       "address": "98 Richmond Street, Goodwood, Cape Town",
       "building_type": "warehouse",
       "roof_area_sqm": 2500,
@@ -134,7 +134,7 @@ curl -X POST https://your-backend-url/api/search \
 
 - ✓ No placeholder.com URLs
 - ✓ No "Building near -33.x, 18.x" fake addresses
-- ✓ Real OpenStreetMap building addresses
+- ✓ Real Google Places addresses
 - ✓ NO coordinates shown in UI (only in API response back-end)
 
 ### Test 4: Check Google Imagery
@@ -146,9 +146,9 @@ curl -X POST https://your-backend-url/api/search \
 
 ## Key Features Deployed
 
-1. **Real Building Detection** - Overpass API (FREE)
-2. **Real Geocoding** - Nominatim API (FREE)
-3. **Real Roof Area Calculation** - OSM polygon geometry (Shoelace formula)
+1. **Real Building Detection** - Google Places API
+2. **Real Geocoding** - Google Geocoding API
+3. **Real Roof Area Calculation** - Google-based rooftop estimation
 4. **Real Solar Calculations** - South African tariff scenarios
 5. **Real Satellite Imagery** - Google Static Maps (25k/day free)
 6. **No Fake Data** - 100% live API queries, zero placeholders
@@ -171,9 +171,9 @@ curl -X POST https://your-backend-url/api/search \
 
 ### Slow responses
 
-- First query may take 20-30 seconds (Overpass API query time)
+- First query may take 20-30 seconds (provider API query time)
 - Subsequent searches are faster
-- This is normal for real-time OSM data
+- This is normal for live provider data
 
 ---
 

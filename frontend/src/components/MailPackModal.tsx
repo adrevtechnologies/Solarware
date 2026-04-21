@@ -36,10 +36,10 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
     const key = 'solarware_saved_leads_v1';
     const currentRaw = localStorage.getItem(key);
     const current = currentRaw ? JSON.parse(currentRaw) : [];
-    const already = current.find((item: { osm_id: string }) => item.osm_id === prospect.osm_id);
+    const already = current.find((item: { lead_id: string }) => item.lead_id === prospect.lead_id);
     if (!already) {
       current.push({
-        osm_id: prospect.osm_id,
+        lead_id: prospect.lead_id,
         address: prospect.address,
         building_type: prospect.building_type,
         roof_area_sqm: prospect.roof_area_sqm,

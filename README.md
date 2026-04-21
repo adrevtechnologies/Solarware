@@ -21,7 +21,7 @@ Solarware is a production-ready application that automates solar prospect discov
 - Frontend: React 18 + TypeScript + Vite
 - Deployment: Docker + recommended free tier platforms
 - Satellite: Google Earth Engine, Sentinel Hub (integrations ready)
-- Geocoding: OpenStreetMap Nominatim
+- Geocoding: Google Geocoding API
 
 ## Features
 
@@ -346,7 +346,7 @@ The system supports multiple providers through a modular interface:
 Multiple sources are queried in parallel:
 
 - Google Maps API (`GOOGLE_MAPS_API_KEY`)
-- OpenStreetMap/Nominatim (free, no credentials needed)
+- Google Geocoding and Places APIs
 - Web search (Google Custom Search API optional)
 
 ### Email Services

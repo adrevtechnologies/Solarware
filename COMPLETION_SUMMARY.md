@@ -125,7 +125,7 @@
 **Geocoding** (fallback strategy):
 
 - ✅ Google Maps API (optional)
-- ✅ OpenStreetMap/Nominatim (free, default)
+- ✅ Google Maps and Places APIs
 - ✅ Multi-source enrichment parallel processing
 
 **Email Services** (all wired):

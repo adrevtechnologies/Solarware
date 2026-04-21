@@ -26,9 +26,6 @@ class Settings(BaseSettings):
     SENTINEL_HUB_CLIENT_ID: str = ""
     SENTINEL_HUB_CLIENT_SECRET: str = ""
 
-    # Geocoding
-    NOMINATIM_USER_AGENT: str = "solarware/0.1.0"
-
     # Google APIs (backend)
     # Keep both names for compatibility with existing deployments.
     GOOGLE_MAPS_API_KEY: str = ""
