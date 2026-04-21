@@ -244,6 +244,7 @@ class AreaMassSearchService:
         max_tiles = 64
         max_candidates = 260
         max_enriched = max(request.page_size * 4, 120)
+        fast_scan = request.fast_scan
 
         bounds = self._resolve_bounds(request)
         cache_key = self._cache_key(request, bounds)
@@ -303,10 +304,13 @@ class AreaMassSearchService:
                 logger.info("Area mass enriched cap reached: %s", max_enriched)
                 break
 
-            try:
-                details = self.places.place_details(pid)
-            except Exception:
+            if fast_scan:
                 details = {}
+            else:
+                try:
+                    details = self.places.place_details(pid)
+                except Exception:
+                    details = {}
             merged = dict(row)
             merged.update({k: v for k, v in details.items() if v is not None})
 

@@ -481,6 +481,7 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
             tile_size_m=500,
             page=1,
             page_size=25,
+            fast_scan=True,
         )
         service = AreaMassSearchService()
         try:

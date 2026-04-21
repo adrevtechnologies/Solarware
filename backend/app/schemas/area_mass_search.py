@@ -18,6 +18,7 @@ class AreaMassSearchRequest(BaseModel):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=200)
     include_types: List[str] = Field(default_factory=lambda: ["store", "point_of_interest"])
+    fast_scan: bool = True
 
 
 class AreaMassSearchResult(BaseModel):
