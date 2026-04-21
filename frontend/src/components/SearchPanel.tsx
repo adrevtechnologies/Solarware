@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import { COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
 
 export interface SearchParams {
@@ -24,6 +25,8 @@ interface SearchPanelProps {
   loading: boolean;
 }
 
+const GOOGLE_LIBRARIES = ['places'];
+
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
   mode,
@@ -34,8 +37,42 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   onFindLeads,
   loading,
 }) => {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey:
+      import.meta.env.VITE_GOOGLE_MAPS_KEY || import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '',
+    libraries: GOOGLE_LIBRARIES as ['places'],
+  });
+
   const canSearch = !!params.query.trim();
   const provinceOptions = PROVINCES_BY_COUNTRY[params.country || 'South Africa'] || [];
+
+  const handlePlaceChanged = () => {
+    const place = autocompleteRef.current?.getPlace();
+    if (!place || !place.geometry || !place.place_id) {
+      return;
+    }
+
+    onParamsChange({
+      ...params,
+      query: place.formatted_address || place.name || params.query,
+      place_id: place.place_id,
+      lat: place.geometry.location?.lat(),
+      lng: place.geometry.location?.lng(),
+      formatted_address: place.formatted_address || '',
+      business_name: place.name || '',
+    });
+  };
+
+  if (!isLoaded) {
+    return (
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 text-slate-300">
+        Loading Google Maps...
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-6">
@@ -73,27 +110,35 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         </p>
       </div>
 
-      <input
-        type="text"
-        placeholder={
-          mode === 'area'
-            ? 'Enter suburb here , eg. Montague Gardens...'
-            : 'Enter full address or business name...'
-        }
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
-        value={params.query}
-        onChange={(e) =>
-          onParamsChange({
-            ...params,
-            query: e.target.value,
-            place_id: undefined,
-            lat: undefined,
-            lng: undefined,
-            formatted_address: undefined,
-            business_name: undefined,
-          })
-        }
-      />
+      <Autocomplete
+        onLoad={(autocomplete) => {
+          autocompleteRef.current = autocomplete;
+        }}
+        onPlaceChanged={handlePlaceChanged}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder={
+            mode === 'area'
+              ? 'Enter suburb here , eg. Montague Gardens...'
+              : 'Enter full address or business name...'
+          }
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+          value={params.query}
+          onChange={(e) =>
+            onParamsChange({
+              ...params,
+              query: e.target.value,
+              place_id: undefined,
+              lat: undefined,
+              lng: undefined,
+              formatted_address: undefined,
+              business_name: undefined,
+            })
+          }
+        />
+      </Autocomplete>
 
       <button
         type="button"

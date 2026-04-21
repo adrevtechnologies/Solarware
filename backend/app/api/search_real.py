@@ -176,7 +176,24 @@ class CitySuggestResponse(BaseModel):
 def _norm_text(value: Optional[str]) -> str:
     if not value:
         return ""
-    return "".join(ch.lower() for ch in value if ch.isalnum() or ch.isspace()).strip()
+    normalized = "".join(ch.lower() for ch in value if ch.isalnum() or ch.isspace()).strip()
+    words = normalized.split()
+    replacements = {
+        "st": "street",
+        "str": "street",
+        "strt": "street",
+        "rd": "road",
+        "ave": "avenue",
+        "av": "avenue",
+        "blvd": "boulevard",
+        "dr": "drive",
+        "ln": "lane",
+        "ctr": "center",
+        "ct": "court",
+        "hwy": "highway",
+    }
+    canonical = [replacements.get(word, word) for word in words]
+    return " ".join(canonical).strip()
 
 
 def _norm_house_number(value: Optional[str]) -> str:
@@ -205,6 +222,13 @@ def _address_matches_request(
         street_match = req_street in cand_street or cand_street in req_street
     if not street_match and cand_full:
         street_match = req_street in cand_full
+    if not street_match:
+        req_tokens = {t for t in req_street.split() if len(t) >= 3}
+        cand_tokens = {t for t in cand_street.split() if len(t) >= 3}
+        full_tokens = {t for t in cand_full.split() if len(t) >= 3}
+        all_tokens = cand_tokens | full_tokens
+        if req_tokens and req_tokens.issubset(all_tokens):
+            street_match = True
     if not street_match:
         return False
 
@@ -253,7 +277,7 @@ def _build_exact_queries(request: SearchRequest) -> List[str]:
 
 def _parse_inline_street(value: Optional[str]) -> Tuple[str, str]:
     """Best-effort parse for inline address text like '98 Richmond Street'."""
-    raw = (value or "").strip()
+    raw = (value or "").strip().split(",")[0].strip()
     if not raw:
         return "", ""
 
@@ -559,10 +583,15 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
     try:
         min_roof = request.min_roof_sqm if request.min_roof_sqm is not None else 120
 
-        inline_number, inline_street = _parse_inline_street(request.suburb)
+        raw_suburb = (request.suburb or "").strip()
+        inline_number, inline_street = _parse_inline_street(raw_suburb)
         effective_street_name = (request.street_name or "").strip() or inline_street
         effective_street_number = (request.street_number or "").strip() or inline_number
-        effective_suburb = (request.suburb or "").strip()
+        effective_suburb = raw_suburb
+        if inline_street and "," in raw_suburb:
+            tail = raw_suburb.split(",", 1)[1].strip()
+            if tail:
+                effective_suburb = tail
         if inline_street and effective_suburb.lower() == f"{inline_number} {inline_street}".strip().lower():
             # If user typed a full address into suburb/query field, keep suburb empty for cleaner geocoding.
             effective_suburb = ""
@@ -817,35 +846,66 @@ async def area_search(request: AreaSearchRequest) -> AreaSearchResponse:
         try:
             ranked, _, _ = service.search_area(area_req)
         except ValueError:
-            return AreaSearchResponse(count=0, results=[])
+            settings = get_settings()
+            places = GooglePlacesClient(settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY)
+            ranked = places.search_nearby(
+                lat=request.lat,
+                lng=request.lng,
+                radius=radius,
+                keyword=(request.query or "").strip(),
+                max_pages=1,
+            )
 
         leads: List[AreaLead] = []
         for row in ranked:
             try:
-                building_type = row.business_type or "commercial"
-                roof_sqm = float(max(row.estimated_roof_sqm or 0.0, 120.0))
-                score = int(get_solar_stats(roof_sqm, building_type).get("solar_score", row.lead_score or 0))
+                if isinstance(row, dict):
+                    geometry = (row.get("geometry") or {}).get("location") or {}
+                    lat_val = geometry.get("lat")
+                    lng_val = geometry.get("lng")
+                    if lat_val is None or lng_val is None:
+                        continue
+
+                    place_id = row.get("place_id") or f"nearby-{lat_val}-{lng_val}"
+                    name = row.get("name") or "Unknown"
+                    address = row.get("formatted_address") or row.get("vicinity") or name
+                    types = row.get("types") or []
+                    building_type = types[0] if types else "commercial"
+                    roof_seed = _estimate_roof_for_place(types, name, row.get("user_ratings_total"))
+                    lead_score = 0
+                else:
+                    place_id = row.place_id
+                    name = row.name or "Unknown"
+                    address = row.address or ""
+                    lat_val = row.lat
+                    lng_val = row.lng
+                    building_type = row.business_type or "commercial"
+                    roof_seed = row.estimated_roof_sqm or 0.0
+                    lead_score = row.lead_score or 0
+
+                roof_sqm = float(max(roof_seed, 120.0))
+                score = int(get_solar_stats(roof_sqm, building_type).get("solar_score", lead_score))
                 leads.append(
                     AreaLead(
-                        lead_id=row.place_id,
-                        name=row.name or "Unknown",
-                        address=row.address or "",
+                        lead_id=place_id,
+                        name=name,
+                        address=address,
                         roof_area_sqm=round(roof_sqm, 1),
                         building_type=building_type,
                         score=score,
-                        lat=row.lat,
-                        lng=row.lng,
+                        lat=lat_val,
+                        lng=lng_val,
                     )
                 )
 
                 solar = get_solar_stats(roof_sqm, building_type)
                 _register_lead(
                     SolarProspect(
-                        lead_id=row.place_id,
-                        address=row.address or "",
+                        lead_id=place_id,
+                        address=address,
                         suburb=None,
                         city=None,
-                        business_name=row.name or "Unknown",
+                        business_name=name,
                         building_type=building_type,
                         roof_area_sqm=roof_sqm,
                         estimated_panel_count=int(solar.get("estimated_panel_count", 0)),
@@ -861,12 +921,16 @@ async def area_search(request: AreaSearchRequest) -> AreaSearchResponse:
                         solar_score=score,
                         lead_grade=_lead_grade_from_score(score),
                         satellite_image_url=None,
-                        latitude=row.lat,
-                        longitude=row.lng,
+                        latitude=lat_val,
+                        longitude=lng_val,
                     )
                 )
             except Exception as row_error:
-                logger.warning("Skipping bad area-search row %s: %s", getattr(row, "place_id", "unknown"), row_error)
+                if isinstance(row, dict):
+                    row_id = row.get("place_id", "unknown")
+                else:
+                    row_id = getattr(row, "place_id", "unknown")
+                logger.warning("Skipping bad area-search row %s: %s", row_id, row_error)
                 continue
 
         return AreaSearchResponse(count=len(leads), results=leads)
