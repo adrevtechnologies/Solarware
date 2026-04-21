@@ -19,6 +19,7 @@ from ..services.nominatim_service import (
     get_bounding_box,
 )
 from ..services.overpass_service import (
+    BuildingPolygon,
     query_commercial_buildings,
     filter_nearby_buildings,
     query_exact_address_points,
@@ -807,6 +808,41 @@ async def search_real_prospects(
                         f"Matched exact address {request.street_number or ''} {request.street_name} "
                         f"via reverse-geocoded building footprint ({reverse_match_distance_m:.0f}m from geocode point)."
                     )
+
+            if not target_building:
+                # Final fallback for physical-address searches: build a small synthetic
+                # footprint around the geocoded point so exact mode still returns the roof.
+                fallback_lat = request.lat if request.lat is not None else center_lat
+                fallback_lon = request.lng if request.lng is not None else center_lon
+                if fallback_lat is not None and fallback_lon is not None:
+                    fallback_area_sqm = float(max(request.min_roof_sqm or 0, 120))
+                    length_m = math.sqrt(fallback_area_sqm * 1.2)
+                    width_m = fallback_area_sqm / max(length_m, 1.0)
+
+                    lat_m = 111_000.0
+                    lon_m = 111_000.0 * max(0.2, math.cos(math.radians(fallback_lat)))
+                    half_lat = (width_m / 2.0) / lat_m
+                    half_lon = (length_m / 2.0) / lon_m
+
+                    synthetic_nodes = [
+                        (fallback_lat - half_lat, fallback_lon - half_lon),
+                        (fallback_lat - half_lat, fallback_lon + half_lon),
+                        (fallback_lat + half_lat, fallback_lon + half_lon),
+                        (fallback_lat + half_lat, fallback_lon - half_lon),
+                    ]
+
+                    target_building = BuildingPolygon(
+                        osm_id=f"google-exact-{abs(hash((round(fallback_lat, 6), round(fallback_lon, 6))))}",
+                        name=request.business_name or None,
+                        building_type="residential",
+                        latitude=fallback_lat,
+                        longitude=fallback_lon,
+                        address=request.formatted_address or query_str or search_area,
+                        suburb=request.suburb,
+                        roof_area_sqm=fallback_area_sqm,
+                        nodes=synthetic_nodes,
+                    )
+                    exact_match_note = "Matched address via Google geocode fallback footprint."
 
             if not target_building:
                 if (
