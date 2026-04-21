@@ -71,6 +71,30 @@ export const Dashboard: React.FC = () => {
 
   // All area/city suggestion logic removed
 
+  const parseStreetAddress = (raw: string) => {
+    const source = (raw || '').trim();
+    if (!source) {
+      return {
+        street_number: undefined as string | undefined,
+        street_name: undefined as string | undefined,
+        suburb: undefined as string | undefined,
+      };
+    }
+
+    const parts = source
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const first = parts[0] || '';
+    const match = first.match(/^(\d+[A-Za-z\/-]*)\s+(.+)$/);
+
+    return {
+      street_number: match ? match[1] : undefined,
+      street_name: match ? match[2] : undefined,
+      suburb: parts.length > 1 ? parts[1] : undefined,
+    };
+  };
+
   const handleAnalyzeProperty = async () => {
     console.log('[Solarware] search:single:start', {
       mode: searchMode,
@@ -87,13 +111,20 @@ export const Dashboard: React.FC = () => {
         return;
       }
       // Use the new query param for backend search
+      const parsed = parseStreetAddress(searchParams.formatted_address || searchParams.query);
       const payload = {
         query: searchParams.query,
         country: searchParams.country,
         province: searchParams.province,
+        city: searchParams.city,
+        suburb: parsed.suburb || searchParams.city || searchParams.query,
+        street_number: parsed.street_number,
+        street_name: parsed.street_name,
         place_id: searchParams.place_id,
         lat: searchParams.lat,
         lng: searchParams.lng,
+        suburb_lat: searchParams.lat,
+        suburb_lng: searchParams.lng,
         formatted_address: searchParams.formatted_address,
         business_name: searchParams.business_name,
         radius_m: 50,

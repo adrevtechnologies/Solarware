@@ -277,7 +277,12 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
       <div className="grid grid-cols-1">
         <button
           onClick={() => {
-            console.log('[SearchPanel] cta:clicked', { mode, loading, canSearch, query: params.query });
+            console.log('[SearchPanel] cta:clicked', {
+              mode,
+              loading,
+              canSearch,
+              query: params.query,
+            });
             onFindLeads();
           }}
           disabled={loading || !canSearch}
