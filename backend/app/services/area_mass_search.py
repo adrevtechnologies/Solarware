@@ -243,10 +243,10 @@ class AreaMassSearchService:
         fast_scan = request.fast_scan
 
         if fast_scan:
-            max_duration_s = 5.0
-            max_tiles = 18
-            max_candidates = 120
-            max_enriched = max(request.page_size * 2, 60)
+            max_duration_s = 8.0
+            max_tiles = 28
+            max_candidates = 180
+            max_enriched = max(request.page_size * 3, 90)
         else:
             max_duration_s = 22.0
             max_tiles = 64
@@ -301,6 +301,22 @@ class AreaMassSearchService:
                     break
             if len(dedupe) >= max_candidates:
                 break
+
+        # Fallback: if nearby scan yields nothing, use a direct text search on the selected area query.
+        if not dedupe and request.query and request.query.strip():
+            try:
+                text_rows = self.places.search_text(request.query.strip(), max_pages=1)
+                for row in text_rows:
+                    pid = row.get("place_id")
+                    if not pid:
+                        continue
+                    if pid not in dedupe:
+                        dedupe[pid] = row
+                        if len(dedupe) >= max_candidates:
+                            break
+                logger.info("Area mass fallback text-search rows=%s query='%s'", len(dedupe), request.query)
+            except Exception as fallback_error:
+                logger.warning("Area mass text-search fallback failed: %s", fallback_error)
 
         enriched: List[AreaMassSearchResult] = []
         for pid, row in dedupe.items():
