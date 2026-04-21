@@ -91,16 +91,30 @@ export const Dashboard: React.FC = () => {
     setSearchMessage('Analyzing property...');
 
     try {
-      if (!searchParams.place_id) {
-        setResults([]);
-        setSearchMessage('Please select a property from Google suggestions first.');
-        return;
-      }
-
       const ready = await ensureBackendReady();
       if (!ready) {
         setResults([]);
         setSearchMessage('Service temporarily unavailable. Please retry.');
+        return;
+      }
+
+      if (!searchParams.place_id) {
+        const fallbackResponse = await api.searchProspects({
+          country: searchParams.country || 'South Africa',
+          province: searchParams.province || '',
+          city: '',
+          suburb: searchParams.query.trim(),
+          radius_m: 500,
+          min_roof_sqm: searchParams.min_roof_sqm,
+        });
+
+        const firstResult = (fallbackResponse.data.results || []).slice(0, 1);
+        setResults(firstResult);
+        setSearchMessage(
+          firstResult.length > 0
+            ? 'Property analyzed from text search fallback.'
+            : 'No mapped roof found for this property search.'
+        );
         return;
       }
 
@@ -152,20 +166,32 @@ export const Dashboard: React.FC = () => {
     setSearchMessage('Generating area leads...');
 
     try {
+      const ready = await ensureBackendReady();
+      if (!ready) {
+        setResults([]);
+        setSearchMessage('Service temporarily unavailable. Please retry.');
+        return;
+      }
+
       if (
         searchParams.lat === undefined ||
         searchParams.lng === undefined ||
         !searchParams.place_id
       ) {
-        setResults([]);
-        setSearchMessage('Please select the area from Google suggestions first.');
-        return;
-      }
+        const fallbackResponse = await api.searchProspects({
+          country: searchParams.country || 'South Africa',
+          province: searchParams.province || '',
+          city: '',
+          suburb: searchParams.query.trim(),
+          radius_m: 1600,
+          min_roof_sqm: searchParams.min_roof_sqm,
+        });
 
-      const ready = await ensureBackendReady();
-      if (!ready) {
-        setResults([]);
-        setSearchMessage('Service temporarily unavailable. Please retry.');
+        setResults(fallbackResponse.data.results || []);
+        setSearchMessage(
+          fallbackResponse.data.message ||
+            `Lead generation complete: ${(fallbackResponse.data.results || []).length} viable properties ranked.`
+        );
         return;
       }
 
