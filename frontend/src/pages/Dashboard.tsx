@@ -185,6 +185,7 @@ export const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1f2937_0%,_#0f172a_55%,_#020617_100%)] text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:py-10">
         <header className="mb-8 rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
+          <img src="/logo.svg" alt="Solarware logo" className="mb-3 h-9 w-auto" />
           <h1 className="text-3xl font-bold tracking-tight">Solarware V1</h1>
           <p className="mt-2 text-sm text-slate-300">
             Real commercial roof discovery for area-targeted outreach.
