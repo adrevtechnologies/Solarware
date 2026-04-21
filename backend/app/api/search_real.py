@@ -1,5 +1,6 @@
 """Google-only search and mail-pack endpoints."""
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -248,6 +249,25 @@ def _build_exact_queries(request: SearchRequest) -> List[str]:
         seen.add(k)
         out.append(q)
     return out
+
+
+def _parse_inline_street(value: Optional[str]) -> Tuple[str, str]:
+    """Best-effort parse for inline address text like '98 Richmond Street'."""
+    raw = (value or "").strip()
+    if not raw:
+        return "", ""
+
+    # number + street-name tokens
+    match = re.match(r"^\s*(\d+[a-zA-Z]?)\s+(.+?)\s*$", raw)
+    if not match:
+        return "", ""
+
+    number = match.group(1).strip()
+    street = match.group(2).strip()
+    if len(street) < 3:
+        return "", ""
+
+    return number, street
 
 
 def _resolve_exact_address_geocode(request: SearchRequest):
@@ -539,7 +559,15 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
     try:
         min_roof = request.min_roof_sqm if request.min_roof_sqm is not None else 120
 
-        has_street = bool((request.street_name or "").strip())
+        inline_number, inline_street = _parse_inline_street(request.suburb)
+        effective_street_name = (request.street_name or "").strip() or inline_street
+        effective_street_number = (request.street_number or "").strip() or inline_number
+        effective_suburb = (request.suburb or "").strip()
+        if inline_street and effective_suburb.lower() == f"{inline_number} {inline_street}".strip().lower():
+            # If user typed a full address into suburb/query field, keep suburb empty for cleaner geocoding.
+            effective_suburb = ""
+
+        has_street = bool(effective_street_name)
         if has_street:
             query = ", ".join(
                 [
@@ -547,11 +575,11 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
                     for p in [
                         " ".join(
                             [
-                                (request.street_number or "").strip(),
-                                (request.street_name or "").strip(),
+                                effective_street_number,
+                                effective_street_name,
                             ]
                         ).strip(),
-                        (request.suburb or "").strip(),
+                        effective_suburb,
                         (request.city or "").strip(),
                         (request.province or "").strip(),
                         (request.postcode or "").strip(),
@@ -561,7 +589,20 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
                 ]
             )
 
-            geo, is_exact_match = _resolve_exact_address_geocode(request)
+            exact_request = SearchRequest(
+                country=request.country,
+                province=request.province,
+                city=request.city,
+                suburb=effective_suburb,
+                street_name=effective_street_name,
+                street_number=effective_street_number,
+                postcode=request.postcode,
+                radius_m=request.radius_m,
+                min_roof_sqm=request.min_roof_sqm,
+                include_residential=request.include_residential,
+            )
+
+            geo, is_exact_match = _resolve_exact_address_geocode(exact_request)
             if not geo:
                 return SearchResponse(results=[], count=0, search_area=query, message="Address not found.")
 
