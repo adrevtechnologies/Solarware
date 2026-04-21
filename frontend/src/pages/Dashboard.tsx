@@ -72,6 +72,11 @@ export const Dashboard: React.FC = () => {
   // All area/city suggestion logic removed
 
   const handleAnalyzeProperty = async () => {
+    console.log('[Solarware] search:single:start', {
+      mode: searchMode,
+      query: searchParams.query,
+      place_id: searchParams.place_id,
+    });
     setLoading(true);
     setSearchMessage('Analyzing property...');
     try {
@@ -94,6 +99,7 @@ export const Dashboard: React.FC = () => {
         radius_m: 50,
         min_roof_sqm: searchParams.min_roof_sqm,
       };
+      console.log('[Solarware] search:single:payload', payload);
       let response;
       try {
         response = await api.searchProspects(payload);
@@ -156,6 +162,11 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleAreaSearch = async () => {
+    console.log('[Solarware] search:area:start', {
+      mode: searchMode,
+      query: searchParams.query,
+      place_id: searchParams.place_id,
+    });
     setLoading(true);
     setSearchMessage('Generating area leads...');
     try {
@@ -184,6 +195,7 @@ export const Dashboard: React.FC = () => {
         page: 1,
         page_size: 100,
       });
+      console.log('[Solarware] search:area:response_count', response.data?.count || 0);
 
       let prospects = mapAreaScanToProspects(response.data.results || []);
       if (searchParams.min_roof_sqm && searchParams.min_roof_sqm > 0) {
@@ -204,6 +216,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleModeSearch = async () => {
+    console.log('[Solarware] search:dispatch', { mode: searchMode, query: searchParams.query });
     if (searchMode === 'area') {
       await handleAreaSearch();
       return;
