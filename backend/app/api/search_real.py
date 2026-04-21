@@ -1,38 +1,26 @@
-"""
-REAL Search Engine - No fake data, no placeholders
-Uses live APIs: Nominatim + Overpass + Solar calculations
-"""
+"""Google-only search and mail-pack endpoints."""
 import logging
-import json
-import hashlib
-import math
 from pathlib import Path
+from typing import List, Optional, Tuple
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Tuple
-from ..services.nominatim_service import (
-    geocode_address,
+
+from ..analysis.mailing_pack import MailingPackGenerator
+from ..analysis.visualization import VizGenerator
+from ..core.config import get_settings
+from ..schemas.area_mass_search import AreaMassSearchRequest
+from ..services.area_mass_search import AreaMassSearchService
+from ..services.email_service import EmailService
+from ..services.google_geocode_service import (
     geocode_address_google,
+    get_bounding_box,
+    reverse_geocode,
     suggest_areas_google,
     suggest_cities_google,
-    reverse_geocode,
-    get_bounding_box,
 )
-from ..services.overpass_service import (
-    BuildingPolygon,
-    query_commercial_buildings,
-    filter_nearby_buildings,
-    query_exact_address_points,
-)
+from ..services.satellite_service import get_satellite_image_url
 from ..services.solar_calculations import get_solar_stats
-from ..services.satellite_service import (
-    get_satellite_image_url_for_polygon,
-    get_padded_bbox_for_polygon,
-)
-from ..analysis.visualization import VizGenerator
-from ..analysis.mailing_pack import MailingPackGenerator
-from ..services.email_service import EmailService
-from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,36 +28,20 @@ router = APIRouter(prefix="/api", tags=["search"])
 
 
 class SearchRequest(BaseModel):
-    """V1 search request: area search with optional exact street address and Google Places data."""
-    # Modern single-input mode
-    query: Optional[str] = None
-    place_id: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    formatted_address: Optional[str] = None
-    business_name: Optional[str] = None
-
-    # Address mode
-    street_number: Optional[str] = None
+    country: str = "South Africa"
+    province: str = ""
+    city: str = ""
+    suburb: str = ""
     street_name: Optional[str] = None
-    suburb: Optional[str] = None
-    suburb_place_id: Optional[str] = None
-    suburb_lat: Optional[float] = None
-    suburb_lng: Optional[float] = None
-    city: Optional[str] = None
-    city_place_id: Optional[str] = None
-    city_lat: Optional[float] = None
-    city_lng: Optional[float] = None
-    province: Optional[str] = None
-    country: Optional[str] = "South Africa"
-    radius_m: int = 50
-    # Roof filters
+    street_number: Optional[str] = None
+    postcode: Optional[str] = None
+    radius_m: int = 1500
     min_roof_sqm: Optional[int] = None
+    include_residential: bool = False
 
 
 class SolarProspect(BaseModel):
-    """Real prospect from OSM - NO fake data"""
-    osm_id: str
+    lead_id: str
     address: str
     suburb: Optional[str]
     city: Optional[str]
@@ -86,14 +58,14 @@ class SolarProspect(BaseModel):
     annual_kwh: float
     savings_low: float
     savings_high: float
-    savings_potential_display: str  # "R xxx k – R xxx k / year"
+    savings_potential_display: str
     solar_score: int
     lead_grade: Optional[str] = None
     satellite_image_url: str
     latitude: float
     longitude: float
     roof_polygon: Optional[List[Tuple[float, float]]] = None
-    image_bbox: Optional[Tuple[float, float, float, float]] = None  # min_lat, max_lat, min_lon, max_lon
+    image_bbox: Optional[Tuple[float, float, float, float]] = None
 
 
 class SearchResponse(BaseModel):
@@ -101,16 +73,6 @@ class SearchResponse(BaseModel):
     count: int
     search_area: str
     message: str
-
-
-def _lead_grade_from_score(score: int) -> str:
-    if score >= 88:
-        return "A+ HOT LEAD"
-    if score >= 76:
-        return "A GOOD LEAD"
-    if score >= 60:
-        return "B MEDIUM"
-    return "C LOW"
 
 
 class MailPackRequest(BaseModel):
@@ -154,313 +116,161 @@ class CitySuggestResponse(BaseModel):
     cities: List[str]
 
 
-def _point_in_polygon(lat: float, lon: float, polygon: List[Tuple[float, float]]) -> bool:
-    if len(polygon) < 3:
-        return False
-    inside = False
-    j = len(polygon) - 1
-    for i in range(len(polygon)):
-        yi, xi = polygon[i]
-        yj, xj = polygon[j]
-        intersects = ((yi > lat) != (yj > lat)) and (
-            lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi
-        )
-        if intersects:
-            inside = not inside
-        j = i
-    return inside
-
-
-def _meters_per_degree(lat: float) -> Tuple[float, float]:
-    return 111_000.0, 111_000.0 * math.cos(math.radians(lat))
-
-
-def _distance_point_segment_m(
-    point_lat: float,
-    point_lon: float,
-    a_lat: float,
-    a_lon: float,
-    b_lat: float,
-    b_lon: float,
-) -> float:
-    m_lat, m_lon = _meters_per_degree(point_lat)
-    px, py = point_lon * m_lon, point_lat * m_lat
-    ax, ay = a_lon * m_lon, a_lat * m_lat
-    bx, by = b_lon * m_lon, b_lat * m_lat
-    abx, aby = bx - ax, by - ay
-    apx, apy = px - ax, py - ay
-    ab2 = abx * abx + aby * aby
-    if ab2 <= 0:
-        return math.sqrt((px - ax) ** 2 + (py - ay) ** 2)
-    t = max(0.0, min(1.0, (apx * abx + apy * aby) / ab2))
-    cx, cy = ax + t * abx, ay + t * aby
-    return math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
-
-
-def _distance_point_polygon_m(lat: float, lon: float, polygon: List[Tuple[float, float]]) -> float:
-    if not polygon:
-        return float("inf")
-    if _point_in_polygon(lat, lon, polygon):
-        return 0.0
-
-    min_distance = float("inf")
-    closed = polygon + [polygon[0]]
-    for i in range(len(closed) - 1):
-        a_lat, a_lon = closed[i]
-        b_lat, b_lon = closed[i + 1]
-        d = _distance_point_segment_m(lat, lon, a_lat, a_lon, b_lat, b_lon)
-        if d < min_distance:
-            min_distance = d
-    return min_distance
-
-
-def _select_exact_target_building(buildings, lat: float, lon: float, max_distance_m: float = 30.0):
-    if not buildings:
-        return None
-
-    scored = []
-    for b in buildings:
-        d = _distance_point_polygon_m(lat, lon, b.nodes)
-        scored.append((d, b))
-
-    scored.sort(key=lambda item: item[0])
-    best_distance, best_building = scored[0]
-    if best_distance > max_distance_m:
-        return None
-    return best_building
-
-
-def _normalize_text(value: Optional[str]) -> str:
+def _norm_text(value: Optional[str]) -> str:
     if not value:
         return ""
-    return "".join(ch for ch in value.lower() if ch.isalnum() or ch.isspace()).strip()
+    return "".join(ch.lower() for ch in value if ch.isalnum() or ch.isspace()).strip()
 
 
-def _normalize_house_number(value: Optional[str]) -> str:
+def _norm_house_number(value: Optional[str]) -> str:
     if not value:
         return ""
-    return "".join(ch for ch in value.lower() if ch.isalnum()).strip()
+    return "".join(ch.lower() for ch in value if ch.isalnum()).strip()
 
 
-def _address_text_matches_request(
-    full_address: Optional[str],
-    requested_street: Optional[str],
-    requested_number: Optional[str],
-) -> bool:
-    if not full_address or not requested_street or not requested_number:
-        return False
-
-    text = _normalize_text(full_address)
-    street = _normalize_text(requested_street)
-    number = _normalize_house_number(requested_number)
-    if not street or not number:
-        return False
-
-    return (street in text) and (number in _normalize_house_number(text))
-
-
-def _reverse_point_matches_request(
-    lat: float,
-    lon: float,
-    requested_street: Optional[str],
-    requested_number: Optional[str],
-) -> bool:
-    rg = reverse_geocode(lat, lon) or {}
-    if _exact_address_match(
-        rg.get("street"),
-        rg.get("house_number"),
-        requested_street,
-        requested_number,
-    ):
-        return True
-
-    return _address_text_matches_request(
-        rg.get("address"),
-        requested_street,
-        requested_number,
-    )
-
-
-def _address_tag_matches(
-    buildings,
-    street_number: Optional[str],
-    street_name: Optional[str],
-):
-    if not street_number or not street_name:
-        return []
-
-    target_number = _normalize_text(street_number)
-    target_street = _normalize_text(street_name)
-    matches = []
-    for building in buildings:
-        b_number = _normalize_text(getattr(building, "house_number", None))
-        b_street = _normalize_text(getattr(building, "street", None))
-        if not b_number or not b_street:
-            continue
-        if b_number == target_number and (target_street in b_street or b_street in target_street):
-            matches.append(building)
-    return matches
-
-
-def _nearest_building_with_distance(buildings, lat: float, lon: float):
-    if not buildings:
-        return None, float("inf")
-    scored = [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings]
-    scored.sort(key=lambda item: item[0])
-    return scored[0][1], scored[0][0]
-
-
-def _street_match(value: Optional[str], target: Optional[str]) -> bool:
-    if not value or not target:
-        return False
-    a = _normalize_text(value)
-    b = _normalize_text(target)
-    return a == b or a in b or b in a
-
-
-def _exact_address_match(
+def _address_matches_request(
     candidate_street: Optional[str],
     candidate_number: Optional[str],
+    candidate_full_address: Optional[str],
     requested_street: Optional[str],
     requested_number: Optional[str],
 ) -> bool:
-    if not _street_match(candidate_street, requested_street):
+    req_street = _norm_text(requested_street)
+    req_num = _norm_house_number(requested_number)
+    if not req_street:
         return False
 
-    requested_number_norm = _normalize_house_number(requested_number)
-    if not requested_number_norm:
+    cand_street = _norm_text(candidate_street)
+    cand_full = _norm_text(candidate_full_address)
+
+    street_match = False
+    if cand_street:
+        street_match = req_street in cand_street or cand_street in req_street
+    if not street_match and cand_full:
+        street_match = req_street in cand_full
+    if not street_match:
+        return False
+
+    if not req_num:
         return True
 
-    candidate_number_norm = _normalize_house_number(candidate_number)
-    return bool(candidate_number_norm) and candidate_number_norm == requested_number_norm
+    cand_num = _norm_house_number(candidate_number)
+    if cand_num:
+        return cand_num == req_num
+
+    # Fall back to full address text when house number is not split into components.
+    return req_num in _norm_house_number(candidate_full_address)
 
 
-def _find_exact_building_by_reverse_address(
-    buildings,
-    lat: float,
-    lon: float,
-    requested_street: Optional[str],
-    requested_number: Optional[str],
-):
-    if not buildings or not requested_street:
-        return None, float("inf")
+def _build_exact_queries(request: SearchRequest) -> List[str]:
+    number = (request.street_number or "").strip()
+    street = (request.street_name or "").strip()
+    suburb = (request.suburb or "").strip()
+    city = (request.city or "").strip()
+    province = (request.province or "").strip()
+    postcode = (request.postcode or "").strip()
+    country = (request.country or "South Africa").strip()
 
-    scored = sorted(
-        [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings],
-        key=lambda item: item[0],
-    )
+    base = f"{number} {street}".strip()
+    candidates = [
+        ", ".join([p for p in [base, suburb, city, province, postcode, country] if p]),
+        ", ".join([p for p in [base, suburb, city, province, country] if p]),
+        ", ".join([p for p in [base, city, province, country] if p]),
+        ", ".join([p for p in [base, suburb, country] if p]),
+        ", ".join([p for p in [base, country] if p]),
+    ]
 
-    for distance_m, building in scored[:80]:
-        rg = reverse_geocode(building.latitude, building.longitude) or {}
-        if _exact_address_match(
-            rg.get("street"),
-            rg.get("house_number"),
-            requested_street,
-            requested_number,
+    seen = set()
+    out: List[str] = []
+    for item in candidates:
+        q = item.strip()
+        if not q:
+            continue
+        k = q.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(q)
+    return out
+
+
+def _resolve_exact_address_geocode(request: SearchRequest):
+    street = (request.street_name or "").strip()
+    number = (request.street_number or "").strip()
+
+    nearest_geo = None
+    for query in _build_exact_queries(request):
+        geo = geocode_address_google(query, country=request.country or "South Africa")
+        if not geo:
+            continue
+
+        if nearest_geo is None:
+            nearest_geo = geo
+
+        if _address_matches_request(
+            geo.street,
+            geo.house_number,
+            geo.address,
+            street,
+            number,
         ):
-            return building, distance_m
+            return geo, True
 
-    return None, float("inf")
-
-
-def _nearest_building_on_requested_street(
-    buildings,
-    lat: float,
-    lon: float,
-    requested_street: Optional[str],
-):
-    if not buildings or not requested_street:
-        return None, float("inf")
-
-    scored = sorted(
-        [(_distance_point_polygon_m(lat, lon, b.nodes), b) for b in buildings],
-        key=lambda item: item[0],
+    # Structured retry path to improve component-level matching quality.
+    structured_geo = geocode_address_google(
+        f"{number} {street}".strip(),
+        city=request.city or "",
+        province=request.province or "",
+        suburb=request.suburb or "",
+        postcode=request.postcode or "",
+        country=request.country or "South Africa",
     )
+    if structured_geo:
+        if nearest_geo is None:
+            nearest_geo = structured_geo
+        if _address_matches_request(
+            structured_geo.street,
+            structured_geo.house_number,
+            structured_geo.address,
+            street,
+            number,
+        ):
+            return structured_geo, True
 
-    # First pass: explicit OSM addr:street tags on buildings.
-    tagged = [(d, b) for d, b in scored if _street_match(getattr(b, "street", None), requested_street)]
-    if tagged:
-        return tagged[0][1], tagged[0][0]
-
-    # Second pass: reverse-geocode top nearest candidates and enforce street match.
-    for d, b in scored[:15]:
-        rg = reverse_geocode(b.latitude, b.longitude) or {}
-        if _street_match(rg.get("street"), requested_street):
-            return b, d
-
-    return None, float("inf")
+    return nearest_geo, False
 
 
-def _to_public_output_url(file_path: str | None) -> str | None:
-    if not file_path:
+def _lead_grade_from_score(score: int) -> str:
+    if score >= 88:
+        return "A+ HOT LEAD"
+    if score >= 76:
+        return "A GOOD LEAD"
+    if score >= 60:
+        return "B MEDIUM"
+    return "C LOW"
+
+
+def _to_public_output_url(path_value: Optional[str]) -> Optional[str]:
+    if not path_value:
         return None
+    path_obj = Path(path_value)
+    settings = get_settings()
+    output_root = Path(settings.OUTPUT_BASE_PATH).resolve()
 
-    normalized = file_path.replace("\\", "/")
-    if normalized.startswith("output/"):
-        return f"/{normalized}"
-
-    output_root = Path(get_settings().OUTPUT_BASE_PATH).resolve().as_posix()
-    if normalized.startswith(output_root):
-        rel = normalized[len(output_root):].lstrip("/")
-        return f"/output/{rel}"
-
-    marker = "/output/"
-    idx = normalized.find(marker)
-    if idx >= 0:
-        return normalized[idx:]
-    return None
-
-
-def _cache_file_for_request(request: SearchRequest) -> Path:
-    cache_root = Path(get_settings().OUTPUT_BASE_PATH).resolve() / "cache"
-    cache_root.mkdir(parents=True, exist_ok=True)
-
-    key_data = {
-        "mode": (
-            "address"
-            if (
-                (request.street_number and request.street_number.strip())
-                and (request.street_name and request.street_name.strip())
-            )
-            else "area"
-        ),
-        "query": request.query,
-        "place_id": request.place_id,
-        "lat": request.lat,
-        "lng": request.lng,
-        "formatted_address": request.formatted_address,
-        "country": request.country,
-        "province": request.province,
-        "city": request.city,
-        "suburb": request.suburb,
-        "street_number": request.street_number,
-        "street_name": request.street_name,
-        "radius_m": request.radius_m,
-        "min_roof_sqm": request.min_roof_sqm,
-    }
-    key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode("utf-8")).hexdigest()[:20]
-    return cache_root / f"search_{key}.json"
-
-
-def _load_cached_results(request: SearchRequest) -> Optional[SearchResponse]:
-    cache_file = _cache_file_for_request(request)
-    if not cache_file.exists():
-        return None
     try:
-        payload = json.loads(cache_file.read_text(encoding="utf-8"))
-        return SearchResponse(**payload)
+        resolved = path_obj.resolve(strict=False)
     except Exception:
         return None
 
+    if not str(resolved).startswith(str(output_root)):
+        return None
 
-def _save_cached_results(request: SearchRequest, response: SearchResponse) -> None:
-    cache_file = _cache_file_for_request(request)
-    cache_file.write_text(response.model_dump_json(indent=2), encoding="utf-8")
+    rel = resolved.relative_to(output_root).as_posix()
+    return f"/output/{rel}"
 
 
 @router.post("/areas/suggest", response_model=AreaSuggestResponse)
 async def suggest_areas(request: AreaSuggestRequest) -> AreaSuggestResponse:
-    """Suggest area/suburb names using Google Places API for dropdown usage."""
     areas = suggest_areas_google(
         query=request.query or "",
         city=request.city or "",
@@ -473,7 +283,6 @@ async def suggest_areas(request: AreaSuggestRequest) -> AreaSuggestResponse:
 
 @router.post("/cities/suggest", response_model=CitySuggestResponse)
 async def suggest_cities(request: CitySuggestRequest) -> CitySuggestResponse:
-    """Suggest city names for dropdown/typeahead usage."""
     cities = suggest_cities_google(
         query=request.query or "",
         province=request.province or "",
@@ -483,547 +292,148 @@ async def suggest_cities(request: CitySuggestRequest) -> CitySuggestResponse:
     return CitySuggestResponse(cities=cities)
 
 
-@router.post("/search")
-async def search_real_prospects(
-    request: SearchRequest,
-) -> SearchResponse:
-    """
-    REAL SEARCH ENGINE
-    
-    V1 behavior:
-    - If street address provided: exact address search only
-    - If street address empty: area search within selected city/province/country
-    
-    1. Geocode location using Nominatim
-    2. Query Overpass API for buildings (commercial by default)
-    3. Calculate solar stats for each building
-    4. Return REAL prospects with real addresses
-    
-    NO placeholder data. NO fake results.
-    If no buildings found, say so.
-    """
-    
+@router.post("/search", response_model=SearchResponse)
+async def search_real_prospects(request: SearchRequest) -> SearchResponse:
     try:
-        query_str: Optional[str] = None
-        exact_match_note: Optional[str] = None
-        geocode_is_house_precise = False
+        min_roof = request.min_roof_sqm if request.min_roof_sqm is not None else 120
 
-        # Support new single-input mode from frontend.
-        modern_query_mode = bool(request.query and request.query.strip())
-        if modern_query_mode:
-            request.country = request.country or "South Africa"
-            request.suburb = request.suburb or request.query
-
-            if (request.lat is not None) and (request.lng is not None):
-                request.suburb_lat = request.suburb_lat or request.lat
-                request.suburb_lng = request.suburb_lng or request.lng
-
-            if not request.city or not request.province:
-                ref_lat = request.suburb_lat or request.lat
-                ref_lng = request.suburb_lng or request.lng
-                if ref_lat is not None and ref_lng is not None:
-                    rev = reverse_geocode(ref_lat, ref_lng) or {}
-                    request.city = request.city or rev.get("city") or rev.get("town") or ""
-                    request.province = request.province or rev.get("province") or rev.get("state") or ""
-
-            if (not request.suburb_lat or not request.suburb_lng) and request.query:
-                geo_any = geocode_address_google(request.query, country=request.country or "South Africa")
-                if not geo_any:
-                    geo_any = geocode_address(request.query, country=request.country or "South Africa")
-                if geo_any:
-                    request.suburb_lat = geo_any.latitude
-                    request.suburb_lng = geo_any.longitude
-                    request.city = request.city or geo_any.city or ""
-                    request.province = request.province or geo_any.province or ""
-
-        # STEP 1: Validate required context fields for V1/new mode.
-        if not request.country or not request.suburb:
-            return SearchResponse(
-                results=[],
-                count=0,
-                search_area="",
-                message="Search query or area/suburb is required.",
-            )
-
-        request.city = request.city or ""
-        request.province = request.province or ""
-
-        has_street_number = bool(request.street_number and request.street_number.strip())
-        has_street_name = bool(request.street_name and request.street_name.strip())
-
-        if has_street_number != has_street_name:
-            return SearchResponse(
-                results=[],
-                count=0,
-                search_area="",
-                message=(
-                    "Provide full street address (number and street) for exact search, "
-                    "or leave address blank for area search."
-                ),
-            )
-
-        is_exact_address = has_street_number and has_street_name
-        logger.info("Search request: exact_address=%s", is_exact_address)
-
-        if is_exact_address:
-            query_str = f"{request.street_number or ''} {request.street_name}".strip()
-            # Use provided lat/lng for area/city if available, else geocode
-            area_lat = request.suburb_lat or request.city_lat
-            area_lng = request.suburb_lng or request.city_lng
-            if area_lat and area_lng:
-                center_lat, center_lon = area_lat, area_lng
-                radius_km = max(0.05, request.radius_m / 1000.0)
-                search_area = f"{request.suburb or ''}, {request.city or ''}, {request.province or ''}"
-            else:
-                area_anchor = geocode_address(
-                    request.suburb,
-                    city=request.city,
-                    province=request.province,
-                    suburb=request.suburb,
-                    postcode="",
-                    country=request.country,
-                )
-                geo = geocode_address(
-                    query_str,
-                    city=request.city,
-                    province=request.province,
-                    suburb=request.suburb,
-                    postcode="",
-                    country=request.country,
-                )
-
-                # Prefer house-level geocoding when Google Maps key is configured.
-                google_geo = geocode_address_google(
-                    query_str,
-                    city=request.city,
-                    province=request.province,
-                    suburb=request.suburb,
-                    postcode="",
-                    country=request.country,
-                )
-                if google_geo:
-                    # Use Google result when Nominatim misses house-number precision.
-                    if not geo or not _exact_address_match(
-                        geo.street,
-                        geo.house_number,
-                        request.street_name,
-                        request.street_number,
-                    ):
-                        geo = google_geo
-                        exact_match_note = (
-                            f"Matched exact address {request.street_number or ''} {request.street_name} via Google geocoder."
-                        )
-
-                geocode_is_house_precise = bool(
-                    geo
-                    and _exact_address_match(
-                        geo.street,
-                        geo.house_number,
-                        request.street_name,
-                        request.street_number,
-                    )
-                )
-
-                if not geocode_is_house_precise and geo:
-                    geocode_is_house_precise = _address_text_matches_request(
-                        geo.address,
-                        request.street_name,
-                        request.street_number,
-                    )
-
-                if not geo:
-                    return SearchResponse(
-                        results=[],
-                        count=0,
-                        search_area=query_str,
-                        message="Address not found. Check street spelling and try again.",
-                    )
-
-                if geo is not None:
-                    center_lat, center_lon = geo.latitude, geo.longitude
-                    radius_km = max(0.05, request.radius_m / 1000.0)
-                    search_area = geo.address
-
-                    # When geocoder resolves only street-level (no house-number precision),
-                    # widen search slightly but keep center anchored to exact geocode point.
-                    if request.street_number and not _exact_address_match(
-                        geo.street,
-                        geo.house_number,
-                        request.street_name,
-                        request.street_number,
-                    ):
-                        radius_km = max(0.05, radius_km)
-
-            # If geocoder returns only a street-level point, try exact addr tags from Overpass.
-            if request.street_number and request.street_name:
-                exact_addr_bbox = get_bounding_box(
-                    center_lat,
-                    center_lon,
-                    max(0.05, request.radius_m / 1000.0),
-                )
-                exact_points = query_exact_address_points(
-                    exact_addr_bbox[0],
-                    exact_addr_bbox[1],
-                    exact_addr_bbox[2],
-                    exact_addr_bbox[3],
-                    request.street_number,
-                    request.street_name,
-                )
-                if not exact_points and area_anchor is not None:
-                    # If geocoder point is off, retry exact OSM tags around selected suburb/city center.
-                    area_bbox = get_bounding_box(
-                        area_anchor.latitude,
-                        area_anchor.longitude,
-                        max(0.05, request.radius_m / 1000.0),
-                    )
-                    exact_points = query_exact_address_points(
-                        area_bbox[0],
-                        area_bbox[1],
-                        area_bbox[2],
-                        area_bbox[3],
-                        request.street_number,
-                        request.street_name,
-                    )
-                if exact_points:
-                    center_lat, center_lon = exact_points[0]
-                    radius_km = 0.05
-                    geocode_is_house_precise = True
-                    exact_match_note = (
-                        f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
-                    )
-        else:
-            # Use provided lat/lng for area/city if available, else geocode
-            area_lat = request.suburb_lat or request.city_lat
-            area_lng = request.suburb_lng or request.city_lng
-            if area_lat and area_lng:
-                center_lat, center_lon = area_lat, area_lng
-                radius_km = max(0.05, request.radius_m / 1000.0)
-                if request.formatted_address:
-                    search_area = request.formatted_address
-                else:
-                    search_area = ", ".join([p for p in [request.suburb, request.city, request.province] if p])
-            else:
-                geo = geocode_address(
-                    request.suburb,
-                    city=request.city,
-                    province=request.province,
-                    postcode="",
-                    country=request.country,
-                )
-                if not geo:
-                    geo = geocode_address_google(
-                        request.suburb,
-                        city=request.city,
-                        province=request.province,
-                        suburb=request.suburb,
-                        postcode="",
-                        country=request.country,
-                    )
-                if not geo:
-                    return SearchResponse(
-                        results=[],
-                        count=0,
-                        search_area=request.suburb,
-                        message="Area not found. Check spelling and try again.",
-                    )
-
-                if geo is not None:
-                    center_lat, center_lon = geo.latitude, geo.longitude
-                    radius_km = max(0.05, request.radius_m / 1000.0)
-                    search_area = f"{request.suburb}, {request.city}, {request.province}"
-
-        # STEP 2: QUERY OVERPASS FOR REAL BUILDINGS
-        include_residential = is_exact_address
-
-        logger.info(
-            "Querying Overpass API for %s buildings near %s",
-            "all addressable" if include_residential else "commercial",
-            search_area,
-        )
-        
-        min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, radius_km)
-
-        buildings = query_commercial_buildings(
-            min_lat,
-            max_lat,
-            min_lon,
-            max_lon,
-            include_residential=include_residential,
-            include_all_buildings=is_exact_address,
-            min_polygon_area_sqm=20.0 if is_exact_address else 100.0,
-        )
-
-        if is_exact_address and not buildings:
-            # Exact address can miss on tiny radius; retry wider before declaring no match.
-            wider_radius_km = max(0.5, radius_km * 2)
-            min_lat, max_lat, min_lon, max_lon = get_bounding_box(center_lat, center_lon, wider_radius_km)
-            buildings = query_commercial_buildings(
-                min_lat,
-                max_lat,
-                min_lon,
-                max_lon,
-                include_residential=True,
-                include_all_buildings=True,
-                min_polygon_area_sqm=20.0,
-            )
-
-        if is_exact_address:
-            target_building = None
-            tag_matched = _address_tag_matches(
-                buildings,
-                request.street_number,
-                request.street_name,
-            )
-            if tag_matched:
-                target_building, nearest_distance_m = _nearest_building_with_distance(
-                    tag_matched,
-                    center_lat,
-                    center_lon,
-                )
-                exact_match_note = (
-                    f"Matched exact OSM address tags for {request.street_number} {request.street_name}."
-                )
-
-        if is_exact_address and not target_building:
-            # Only trust nearest-footprint selection when geocoder is house-number precise.
-            if geocode_is_house_precise:
-                target_building = _select_exact_target_building(
-                    buildings,
-                    center_lat,
-                    center_lon,
-                    max_distance_m=35.0,
-                )
-
-            if not target_building:
-                reverse_match_building, reverse_match_distance_m = _find_exact_building_by_reverse_address(
-                    buildings,
-                    center_lat,
-                    center_lon,
-                    request.street_name,
-                    request.street_number,
-                )
-                if reverse_match_building:
-                    target_building = reverse_match_building
-                    exact_match_note = (
-                        f"Matched exact address {request.street_number or ''} {request.street_name} "
-                        f"via reverse-geocoded building footprint ({reverse_match_distance_m:.0f}m from geocode point)."
-                    )
-
-            if not target_building:
-                # Final fallback for physical-address searches: build a small synthetic
-                # footprint around the geocoded point so exact mode still returns the roof.
-                fallback_lat = request.lat if request.lat is not None else center_lat
-                fallback_lon = request.lng if request.lng is not None else center_lon
-                if fallback_lat is not None and fallback_lon is not None:
-                    fallback_area_sqm = float(max(request.min_roof_sqm or 0, 120))
-                    length_m = math.sqrt(fallback_area_sqm * 1.2)
-                    width_m = fallback_area_sqm / max(length_m, 1.0)
-
-                    lat_m = 111_000.0
-                    lon_m = 111_000.0 * max(0.2, math.cos(math.radians(fallback_lat)))
-                    half_lat = (width_m / 2.0) / lat_m
-                    half_lon = (length_m / 2.0) / lon_m
-
-                    synthetic_nodes = [
-                        (fallback_lat - half_lat, fallback_lon - half_lon),
-                        (fallback_lat - half_lat, fallback_lon + half_lon),
-                        (fallback_lat + half_lat, fallback_lon + half_lon),
-                        (fallback_lat + half_lat, fallback_lon - half_lon),
+        has_street = bool((request.street_name or "").strip())
+        if has_street:
+            query = ", ".join(
+                [
+                    p
+                    for p in [
+                        " ".join(
+                            [
+                                (request.street_number or "").strip(),
+                                (request.street_name or "").strip(),
+                            ]
+                        ).strip(),
+                        (request.suburb or "").strip(),
+                        (request.city or "").strip(),
+                        (request.province or "").strip(),
+                        (request.postcode or "").strip(),
+                        (request.country or "South Africa").strip(),
                     ]
+                    if p
+                ]
+            )
 
-                    target_building = BuildingPolygon(
-                        osm_id=f"google-exact-{abs(hash((round(fallback_lat, 6), round(fallback_lon, 6))))}",
-                        name=request.business_name or None,
-                        building_type="residential",
-                        latitude=fallback_lat,
-                        longitude=fallback_lon,
-                        address=request.formatted_address or query_str or search_area,
-                        suburb=request.suburb,
-                        roof_area_sqm=fallback_area_sqm,
-                        nodes=synthetic_nodes,
-                    )
-                    exact_match_note = "Matched address via Google geocode fallback footprint."
+            geo, is_exact_match = _resolve_exact_address_geocode(request)
+            if not geo:
+                return SearchResponse(results=[], count=0, search_area=query, message="Address not found.")
 
-            if not target_building:
-                if (
-                    geocode_is_house_precise
-                    and geo is not None
-                    and (
-                        _reverse_point_matches_request(
-                            center_lat,
-                            center_lon,
-                            request.street_name,
-                            request.street_number,
-                        )
-                        or _address_text_matches_request(
-                            geo.address,
-                            request.street_name,
-                            request.street_number,
-                        )
-                    )
-                ):
-                    logger.info(
-                        "Exact address resolved but no mapped roof footprint found near (%s, %s); returning no-result response.",
-                        center_lat,
-                        center_lon,
-                    )
-
+            if not is_exact_match:
                 return SearchResponse(
                     results=[],
                     count=0,
-                    search_area=search_area,
-                    message="No building footprint found for exact address.",
-                )
-            buildings = [target_building]
-        
-        if not buildings:
-
-            cached = _load_cached_results(request)
-            if cached:
-                return SearchResponse(
-                    results=cached.results,
-                    count=cached.count,
-                    search_area=cached.search_area,
-                    message=f"Live map source timed out. Showing last successful results for {cached.search_area}.",
+                    search_area=query,
+                    message=(
+                        "Closest address was found but street/number did not match exactly. "
+                        "Please confirm the exact street number and suburb."
+                    ),
                 )
 
-            return SearchResponse(
-                results=[],
-                count=0,
-                search_area=search_area,
-                message="No suitable properties found in this area. Try increasing radius or changing location."
+            roof_sqm = float(max(min_roof, 120))
+            solar = get_solar_stats(roof_sqm, "residential", province=request.province or "")
+            image_url = get_satellite_image_url(geo.latitude, geo.longitude)
+
+            response = SearchResponse(
+                results=[
+                    SolarProspect(
+                        lead_id=f"google-{geo.latitude:.6f}-{geo.longitude:.6f}",
+                        address=geo.address,
+                        suburb=geo.suburb,
+                        city=geo.city,
+                        business_name=None,
+                        building_type="residential",
+                        roof_area_sqm=solar["roof_area_sqm"],
+                        estimated_panel_count=solar["estimated_panel_count"],
+                        capacity_low_kw=solar["capacity_low_kw"],
+                        capacity_high_kw=solar["capacity_high_kw"],
+                        annual_kwh=solar["annual_kwh_mid"],
+                        savings_low=solar["savings_low"],
+                        savings_high=solar["savings_high"],
+                        savings_potential_display=f"R {int(solar['savings_low'])//1000}k - R {int(solar['savings_high'])//1000}k / year",
+                        solar_score=solar["solar_score"],
+                        lead_grade=_lead_grade_from_score(solar["solar_score"]),
+                        satellite_image_url=image_url,
+                        latitude=geo.latitude,
+                        longitude=geo.longitude,
+                    )
+                ],
+                count=1,
+                search_area=geo.address,
+                message="Matched address via Google geocode.",
             )
+            return response
 
-        # Filter by radius and building type
-        if not is_exact_address:
-            buildings = filter_nearby_buildings(buildings, center_lat, center_lon, radius_km)
-        
-        candidates_before_roof_filter = list(buildings)
+        center_query = ", ".join(
+            [
+                (request.suburb or "").strip(),
+                (request.city or "").strip(),
+                (request.province or "").strip(),
+                (request.country or "South Africa").strip(),
+            ]
+        ).strip(", ")
 
-        effective_min_roof_sqm = (
-            request.min_roof_sqm
-            if request.min_roof_sqm is not None
-            else (20 if is_exact_address else 120)
+        area_req = AreaMassSearchRequest(
+            query=center_query,
+            radius_m=max(300, request.radius_m),
+            tile_size_m=500,
+            page=1,
+            page_size=40,
         )
-        buildings = [b for b in buildings if b.roof_area_sqm >= effective_min_roof_sqm]
+        service = AreaMassSearchService()
+        ranked, _, _ = service.search_area(area_req)
 
-        if is_exact_address and not buildings and candidates_before_roof_filter:
-            buildings = candidates_before_roof_filter[:1]
-
-        if not buildings:
-
-            return SearchResponse(
-                results=[],
-                count=0,
-                search_area=search_area,
-                message="No buildings match your filters."
-            )
-
-        # STEP 3: CALCULATE SOLAR STATS FOR EACH BUILDING
-        logger.info(f"Calculating solar stats for {len(buildings)} buildings")
-        
-        results = []
-        for building in buildings[:500]:  # Limit to 500 results
-            try:
-                # Get solar calculations
-                solar = get_solar_stats(
-                    building.roof_area_sqm,
-                    building.building_type,
-                    province=request.province
-                )
-
-                image_bbox = None
-                if getattr(building, "nodes", None):
-                    image_url = get_satellite_image_url_for_polygon(building.nodes, padding_ratio=0.15)
-                    image_bbox = get_padded_bbox_for_polygon(building.nodes, padding_ratio=0.15)
-                else:
-                    logger.debug("Skipping building %s due to missing polygon footprint", building.osm_id)
-                    continue
-
-                # Reverse geocode for full address
-                geo_result = reverse_geocode(building.latitude, building.longitude)
-                if geo_result and geo_result.get("address"):
-                    address = geo_result.get("address")
-                elif getattr(building, "street", None):
-                    street_bits = [
-                        getattr(building, "house_number", None),
-                        getattr(building, "street", None),
-                    ]
-                    address = " ".join([bit for bit in street_bits if bit])
-                else:
-                    address = building.name or "Mapped commercial building in selected area"
-
-                is_residential_result = building.building_type == "residential"
-                business_name = None if is_residential_result else building.name
-                website = None if is_residential_result else building.website
-                phone = None if is_residential_result else building.phone
-                email = None if is_residential_result else building.email
-                contact_person = None if is_residential_result else building.contact_person
-
-                # Format savings display
-                savings_low = int(solar["savings_low"])
-                savings_high = int(solar["savings_high"])
-                savings_display = f"R {savings_low/1000:.0f}k - R {savings_high/1000:.0f}k / year"
-
-                prospect = SolarProspect(
-                    osm_id=building.osm_id,
-                    address=address,
-                    suburb=geo_result.get("suburb") if geo_result else None,
-                    city=geo_result.get("city") if geo_result else None,
-                    business_name=business_name,
-                    building_type=building.building_type,
-                    website=website,
-                    phone=phone,
-                    email=email,
-                    contact_person=contact_person,
-                    roof_area_sqm=solar["roof_area_sqm"],
-                    estimated_panel_count=solar["estimated_panel_count"],
-                    capacity_low_kw=solar["capacity_low_kw"],
-                    capacity_high_kw=solar["capacity_high_kw"],
-                    annual_kwh=solar["annual_kwh_mid"],
-                    savings_low=solar["savings_low"],
-                    savings_high=solar["savings_high"],
-                    savings_potential_display=savings_display,
-                    solar_score=solar["solar_score"],
-                    lead_grade=_lead_grade_from_score(solar["solar_score"]),
-                    satellite_image_url=image_url,
-                    latitude=building.latitude,
-                    longitude=building.longitude,
-                    roof_polygon=building.nodes if getattr(building, "nodes", None) else None,
-                    image_bbox=image_bbox,
-                )
-                
-                results.append(prospect)
-
-            except Exception as e:
-                logger.error(f"Error processing building {building.osm_id}: {e}")
+        results: List[SolarProspect] = []
+        for row in ranked:
+            if row.estimated_roof_sqm < min_roof:
                 continue
+            stats = get_solar_stats(row.estimated_roof_sqm, row.business_type, province=request.province or "")
+            image_url = get_satellite_image_url(row.lat, row.lng)
+            rev = reverse_geocode(row.lat, row.lng) or {}
+            results.append(
+                SolarProspect(
+                    lead_id=row.place_id,
+                    address=row.address,
+                    suburb=rev.get("suburb"),
+                    city=rev.get("city") or request.city,
+                    business_name=row.name,
+                    building_type=row.business_type,
+                    website=row.website,
+                    phone=row.phone,
+                    email=row.email,
+                    roof_area_sqm=stats["roof_area_sqm"],
+                    estimated_panel_count=stats["estimated_panel_count"],
+                    capacity_low_kw=stats["capacity_low_kw"],
+                    capacity_high_kw=stats["capacity_high_kw"],
+                    annual_kwh=stats["annual_kwh_mid"],
+                    savings_low=stats["savings_low"],
+                    savings_high=stats["savings_high"],
+                    savings_potential_display=f"R {int(stats['savings_low'])//1000}k - R {int(stats['savings_high'])//1000}k / year",
+                    solar_score=stats["solar_score"],
+                    lead_grade=_lead_grade_from_score(stats["solar_score"]),
+                    satellite_image_url=image_url,
+                    latitude=row.lat,
+                    longitude=row.lng,
+                )
+            )
 
-        logger.info(f"Search completed: {len(results)} prospects found in {search_area}")
-        
-        response_message = (
-            exact_match_note
-            if (is_exact_address and exact_match_note)
-            else f"Found {len(results)} properties with solar potential in {search_area}"
-        )
-
-        response = SearchResponse(
+        return SearchResponse(
             results=results,
             count=len(results),
-            search_area=search_area,
-            message=response_message,
+            search_area=center_query,
+            message=f"Found {len(results)} properties with solar potential in {center_query}",
         )
-        _save_cached_results(request, response)
-        return response
-
     except Exception as e:
-        logger.error(f"Search error: {str(e)}", exc_info=True)
+        logger.error("Search error: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @router.post("/search/mail-pack", response_model=MailPackResponse)
 async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
-    """Generate heavy mail pack assets on demand for one selected result."""
     try:
         prospect = request.prospect
 
@@ -1040,7 +450,7 @@ async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
                 image_bbox=prospect.image_bbox,
             )
         except Exception as viz_error:
-            logger.warning("Mockup generation failed for %s: %s", prospect.osm_id, viz_error)
+            logger.warning("Mockup generation failed for %s: %s", prospect.lead_id, viz_error)
 
         if mockup_path:
             try:
@@ -1049,11 +459,11 @@ async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
                     mockup_image_path=mockup_path,
                 )
             except Exception as compare_error:
-                logger.warning("Before/after generation failed for %s: %s", prospect.osm_id, compare_error)
+                logger.warning("Before/after generation failed for %s: %s", prospect.lead_id, compare_error)
 
         pack = MailingPackGenerator.generate(
             prospect={
-                "id": prospect.osm_id,
+                "id": prospect.lead_id,
                 "address": prospect.address,
                 "business_name": prospect.business_name,
                 "business_type": prospect.building_type,
@@ -1090,20 +500,40 @@ async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
             outreach_email=pack["outreach"]["cold_email"],
         )
     except Exception as e:
-        logger.error("Mail pack generation failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Mail pack generation failed: {e}")
+        logger.error("Mail pack generation failed: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Mail pack generation failed: {str(e)}")
 
 
 @router.post("/search/mail-pack/send")
-async def send_mail_pack_email(request: MailPackSendRequest):
-    """Send outreach email using SMTP when configured."""
+async def send_mail_pack(request: MailPackSendRequest):
     try:
-        result = await EmailService.send_pack_email(
-            mailing_pack=request.mailing_pack,
+        email_service = EmailService()
+        if not email_service.is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Email service not configured. Set SMTP credentials or SENDGRID_API_KEY in backend environment."
+                ),
+            )
+
+        result = await email_service.send_cold_email(
             recipient_email=request.recipient_email,
-            dry_run=False,
-            via="smtp",
+            subject=request.mailing_pack.get("email_subject", "Solar savings opportunity"),
+            body=request.mailing_pack.get("email_body", ""),
+            recipient_name=request.mailing_pack.get("contact_name"),
         )
-        return result
+
+        if result.get("success"):
+            return {
+                "status": "sent",
+                "recipient_email": request.recipient_email,
+                "provider": result.get("provider"),
+                "message_id": result.get("message_id"),
+            }
+
+        raise HTTPException(status_code=502, detail=result.get("error") or "Email sending failed")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email send failed: {e}")
+        logger.error("Mail pack send failed: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Mail pack send failed: {str(e)}")

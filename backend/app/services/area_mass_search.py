@@ -11,8 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..core.config import get_settings
 from ..integrations.google_places import GooglePlacesClient
 from ..schemas.area_mass_search import AreaMassSearchRequest, AreaMassSearchResult
-from ..services.nominatim_service import geocode_address_google
-from ..services.overpass_service import query_commercial_buildings
+from ..services.google_geocode_service import geocode_address_google
 from ..services.solar_calculations import get_solar_stats
 
 
@@ -45,34 +44,24 @@ class AreaMassSearchService:
             return "B MEDIUM"
         return "C LOW"
 
-    def _closest_roof_sqm(self, lat: float, lng: float, search_radius_m: float = 180.0) -> Optional[float]:
-        lat_delta = self._meters_to_lat(search_radius_m)
-        lng_delta = self._meters_to_lng(search_radius_m, lat)
-        nearby = query_commercial_buildings(
-            min_lat=lat - lat_delta,
-            max_lat=lat + lat_delta,
-            min_lon=lng - lng_delta,
-            max_lon=lng + lng_delta,
-            include_residential=False,
-            include_all_buildings=False,
-            min_polygon_area_sqm=100.0,
-        )
-        if not nearby:
-            return None
+    def _estimate_roof_sqm(self, types: List[str], name: Optional[str], user_ratings_total: Optional[int]) -> float:
+        t = set(types or [])
+        label = (name or "").lower()
 
-        best_area: Optional[float] = None
-        best_distance = float("inf")
-        for b in nearby:
-            lat_m = (b.latitude - lat) * 111_000
-            lon_m = (b.longitude - lng) * 111_000 * max(0.2, math.cos(math.radians(lat)))
-            dist = math.sqrt(lat_m ** 2 + lon_m ** 2)
-            if dist < best_distance:
-                best_distance = dist
-                best_area = b.roof_area_sqm
-
-        if best_distance <= search_radius_m:
-            return round(float(best_area), 1) if best_area is not None else None
-        return None
+        if {"shopping_mall", "supermarket", "department_store"}.intersection(t):
+            return 2400.0
+        if {"warehouse", "industrial", "factory"}.intersection(t):
+            return 1800.0
+        if {"school", "university", "hospital"}.intersection(t):
+            return 1200.0
+        if {"store", "point_of_interest"}.intersection(t):
+            # Popular destinations likely have larger rooftops.
+            if (user_ratings_total or 0) > 200:
+                return 900.0
+            if "center" in label or "centre" in label:
+                return 1100.0
+            return 650.0
+        return 500.0
 
     def _estimate_savings(self, roof_sqm: float, types: List[str]) -> float:
         # Reuse the same modeled solar economics path as main search flow.
@@ -251,6 +240,11 @@ class AreaMassSearchService:
 
     def search_area(self, request: AreaMassSearchRequest) -> Tuple[List[AreaMassSearchResult], int, str]:
         started = time.time()
+        max_duration_s = 22.0
+        max_tiles = 64
+        max_candidates = 260
+        max_enriched = max(request.page_size * 4, 120)
+
         bounds = self._resolve_bounds(request)
         cache_key = self._cache_key(request, bounds)
 
@@ -261,15 +255,24 @@ class AreaMassSearchService:
             return parsed_cached, len(parsed_cached), self._export_csv(parsed_cached, cache_key)
 
         tiles = self.tile_bounds(bounds, request.tile_size_m)
+        if len(tiles) > max_tiles:
+            logger.info("Area mass tile cap applied: %s -> %s", len(tiles), max_tiles)
+            tiles = tiles[:max_tiles]
+
         radius = max(200, int(request.tile_size_m // 2))
 
         # Multiple query paths to increase recall per tile.
         keywords = [k for k in [(request.query or "").strip(), "industrial", "warehouse", "commercial"] if k]
 
         dedupe: Dict[str, Dict[str, Any]] = {}
-        roof_cache: Dict[str, Optional[float]] = {}
         for tile in tiles:
+            if (time.time() - started) > max_duration_s:
+                logger.warning("Area mass stopped at tile loop due to time budget")
+                break
             for keyword in keywords:
+                if (time.time() - started) > max_duration_s:
+                    logger.warning("Area mass stopped at keyword loop due to time budget")
+                    break
                 tile_results = self.places.search_nearby(
                     lat=tile["lat"],
                     lng=tile["lng"],
@@ -283,9 +286,23 @@ class AreaMassSearchService:
                         continue
                     if pid not in dedupe:
                         dedupe[pid] = row
+                        if len(dedupe) >= max_candidates:
+                            logger.info("Area mass candidate cap reached: %s", max_candidates)
+                            break
+                if len(dedupe) >= max_candidates:
+                    break
+            if len(dedupe) >= max_candidates:
+                break
 
         enriched: List[AreaMassSearchResult] = []
         for pid, row in dedupe.items():
+            if (time.time() - started) > max_duration_s:
+                logger.warning("Area mass stopped at enrichment due to time budget")
+                break
+            if len(enriched) >= max_enriched:
+                logger.info("Area mass enriched cap reached: %s", max_enriched)
+                break
+
             details = self.places.place_details(pid)
             merged = dict(row)
             merged.update({k: v for k, v in details.items() if v is not None})
@@ -301,13 +318,7 @@ class AreaMassSearchService:
             rating = merged.get("rating")
             votes = merged.get("user_ratings_total")
 
-            roof_key = f"{round(float(lat), 5)}:{round(float(lng), 5)}"
-            if roof_key not in roof_cache:
-                roof_cache[roof_key] = self._closest_roof_sqm(float(lat), float(lng))
-            roof_sqm = roof_cache[roof_key]
-            if roof_sqm is None:
-                # Keep results strictly tied to mapped footprints.
-                continue
+            roof_sqm = self._estimate_roof_sqm(types, merged.get("name"), votes)
 
             annual_savings = self._estimate_savings(roof_sqm, types)
             open_now_like = bool(merged.get("opening_hours") and merged["opening_hours"].get("weekday_text"))
