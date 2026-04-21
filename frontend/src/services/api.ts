@@ -20,6 +20,11 @@ export const api = {
       searchParams
     ),
 
+  enrichLead: (prospect: Prospect) =>
+    apiClient.post<Prospect>('/api/search/lead/enrich', {
+      prospect,
+    }),
+
   generateMailPack: (prospect: Prospect) =>
     apiClient.post<MailPack>('/api/search/mail-pack', {
       prospect,

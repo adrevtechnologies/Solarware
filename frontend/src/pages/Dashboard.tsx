@@ -29,20 +29,37 @@ export const Dashboard: React.FC = () => {
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
 
-  const splitStreetInput = (street?: string): { street_number?: string; street_name?: string } => {
+  const splitStreetInput = (
+    street?: string,
+    area?: string,
+    city?: string
+  ): { street_number?: string; street_name?: string } => {
     const raw = (street || '').trim();
     if (!raw) {
       return { street_number: undefined, street_name: undefined };
     }
 
-    const firstSpace = raw.indexOf(' ');
+    const collapseSpaces = (value: string) => value.replace(/\s+/g, ' ').trim();
+    const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let cleaned = collapseSpaces(raw.replace(/,+/g, ', '));
+
+    // Remove trailing locality hints when users paste full address into street field.
+    const localityParts = [area, city].map((item) => (item || '').trim()).filter(Boolean);
+    for (const part of localityParts) {
+      const partEscaped = escapeRegex(part);
+      cleaned = cleaned.replace(new RegExp(`(?:,\\s*|\\s+)${partEscaped}$`, 'i'), '');
+    }
+    cleaned = collapseSpaces(cleaned.replace(/,$/, ''));
+
+    const firstSpace = cleaned.indexOf(' ');
     if (firstSpace <= 0) {
-      return { street_number: undefined, street_name: raw };
+      return { street_number: undefined, street_name: cleaned };
     }
 
     return {
-      street_number: raw.slice(0, firstSpace).trim(),
-      street_name: raw.slice(firstSpace + 1).trim(),
+      street_number: cleaned.slice(0, firstSpace).trim(),
+      street_name: cleaned.slice(firstSpace + 1).trim(),
     };
   };
 
@@ -51,7 +68,11 @@ export const Dashboard: React.FC = () => {
     setSearchMessage('');
 
     try {
-      const streetParts = splitStreetInput(searchParams.street);
+      const streetParts = splitStreetInput(
+        searchParams.street,
+        searchParams.area,
+        searchParams.city
+      );
       const payload = {
         mode: streetParts.street_name ? 'address' : 'area',
         country: searchParams.country,
@@ -80,14 +101,29 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleOpenImage = (prospect: Prospect) => {
-    setSelectedProspect(prospect);
-    setImageModalOpen(true);
+    void (async () => {
+      try {
+        setGeneratingPackId(prospect.lead_id);
+        const enriched = await api.enrichLead(prospect);
+        setSelectedProspect(enriched.data);
+        setImageModalOpen(true);
+      } catch (error) {
+        setSelectedProspect(prospect);
+        setImageModalOpen(true);
+        setSearchMessage(
+          `Lead enrichment partial: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      } finally {
+        setGeneratingPackId(null);
+      }
+    })();
   };
 
   const handleGenerateMailPack = async (prospect: Prospect) => {
     try {
-      setGeneratingPackId(prospect.osm_id);
-      const response = await api.generateMailPack(prospect);
+      setGeneratingPackId(prospect.lead_id);
+      const enriched = await api.enrichLead(prospect);
+      const response = await api.generateMailPack(enriched.data);
       const pack = response.data;
 
       const withAbsoluteUrls: MailPack = {
@@ -109,7 +145,7 @@ export const Dashboard: React.FC = () => {
       };
 
       setMailPack(withAbsoluteUrls);
-      setSelectedProspect(prospect);
+      setSelectedProspect(enriched.data);
       setMailPackOpen(true);
       setImageModalOpen(false);
     } catch (error) {
@@ -194,7 +230,7 @@ export const Dashboard: React.FC = () => {
         isOpen={imageModalOpen}
         onClose={() => setImageModalOpen(false)}
         prospect={selectedProspect || undefined}
-        generating={!!(selectedProspect && generatingPackId === selectedProspect.osm_id)}
+        generating={!!(selectedProspect && generatingPackId === selectedProspect.lead_id)}
         onGenerateMailPack={() => {
           if (selectedProspect) {
             void handleGenerateMailPack(selectedProspect);

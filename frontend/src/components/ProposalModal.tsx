@@ -28,11 +28,17 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
 
         <div className="p-6">
           <div className="overflow-hidden rounded-lg border border-slate-700">
-            <img
-              src={prospect.satellite_image_url}
-              alt={`Satellite roof view for ${prospect.address}`}
-              className="h-auto w-full"
-            />
+            {prospect.satellite_image_url ? (
+              <img
+                src={prospect.satellite_image_url}
+                alt={`Satellite roof view for ${prospect.address}`}
+                className="h-auto w-full"
+              />
+            ) : (
+              <div className="flex h-64 items-center justify-center bg-slate-800 text-sm text-slate-300">
+                Loading enriched satellite image...
+              </div>
+            )}
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-300 sm:grid-cols-4">

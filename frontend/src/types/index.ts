@@ -16,7 +16,7 @@ export interface SearchArea {
 }
 
 export interface Prospect {
-  osm_id: string;
+  lead_id: string;
   address: string;
   suburb?: string;
   city?: string;
@@ -35,7 +35,7 @@ export interface Prospect {
   savings_high: number;
   savings_potential_display: string; // "R xxx k – R xxx k / year"
   solar_score: number; // 0-100
-  satellite_image_url: string;
+  satellite_image_url?: string;
   latitude: number;
   longitude: number;
 }

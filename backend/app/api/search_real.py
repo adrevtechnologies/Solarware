@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..analysis.mailing_pack import MailingPackGenerator
 from ..analysis.visualization import VizGenerator
 from ..core.config import get_settings
+from ..integrations.google_places import GooglePlacesClient
 from ..schemas.area_mass_search import AreaMassSearchRequest
 from ..services.area_mass_search import AreaMassSearchService
 from ..services.email_service import EmailService
@@ -61,7 +62,7 @@ class SolarProspect(BaseModel):
     savings_potential_display: str
     solar_score: int
     lead_grade: Optional[str] = None
-    satellite_image_url: str
+    satellite_image_url: Optional[str] = None
     latitude: float
     longitude: float
     roof_polygon: Optional[List[Tuple[float, float]]] = None
@@ -93,6 +94,10 @@ class MailPackResponse(BaseModel):
 class MailPackSendRequest(BaseModel):
     mailing_pack: dict
     recipient_email: str
+
+
+class LeadEnrichRequest(BaseModel):
+    prospect: SolarProspect
 
 
 class AreaSuggestRequest(BaseModel):
@@ -269,6 +274,100 @@ def _to_public_output_url(path_value: Optional[str]) -> Optional[str]:
     return f"/output/{rel}"
 
 
+def _safe(value, default):
+    return value if value is not None else default
+
+
+def _enrich_prospect_lazy(prospect: SolarProspect) -> SolarProspect:
+    """Lazy enrichment for a single selected lead; failures stay local to each task."""
+    settings = get_settings()
+    places = GooglePlacesClient(settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY)
+
+    # Base values from the scan result.
+    website = prospect.website
+    phone = prospect.phone
+    email = prospect.email
+    business_name = prospect.business_name
+    address = prospect.address
+    building_type = prospect.building_type or "commercial"
+    roof_area_sqm = float(max(prospect.roof_area_sqm or 0.0, 120.0))
+
+    # Task 1: place details lookup for this one lead.
+    try:
+        if prospect.lead_id and not prospect.lead_id.startswith("google-"):
+            details = places.place_details(prospect.lead_id) or {}
+            website = _safe(details.get("website"), website)
+            phone = _safe(details.get("formatted_phone_number") or details.get("international_phone_number"), phone)
+            business_name = _safe(details.get("name"), business_name)
+            address = _safe(details.get("formatted_address"), address)
+            if details.get("types"):
+                building_type = details.get("types")[0] or building_type
+    except Exception as details_error:
+        logger.warning("Lead details enrichment failed for %s: %s", prospect.lead_id, details_error)
+
+    # Task 2: website email scrape (single lead only).
+    try:
+        if not email and website:
+            email = places.discover_website_email(website)
+    except Exception as scrape_error:
+        logger.warning("Lead website scrape failed for %s: %s", prospect.lead_id, scrape_error)
+
+    # Task 3: solar report recompute from current lead values.
+    try:
+        solar = get_solar_stats(roof_area_sqm, building_type, province=prospect.city or "")
+    except Exception as solar_error:
+        logger.warning("Lead solar enrichment failed for %s: %s", prospect.lead_id, solar_error)
+        solar = {
+            "roof_area_sqm": roof_area_sqm,
+            "estimated_panel_count": prospect.estimated_panel_count,
+            "capacity_low_kw": prospect.capacity_low_kw,
+            "capacity_high_kw": prospect.capacity_high_kw,
+            "annual_kwh_mid": prospect.annual_kwh,
+            "savings_low": prospect.savings_low,
+            "savings_high": prospect.savings_high,
+            "solar_score": prospect.solar_score,
+        }
+
+    # Task 4: image generation url for this one lead.
+    image_url = prospect.satellite_image_url
+    try:
+        image_url = get_satellite_image_url(prospect.latitude, prospect.longitude)
+    except Exception as image_error:
+        logger.warning("Lead image enrichment failed for %s: %s", prospect.lead_id, image_error)
+
+    score = int(_safe(solar.get("solar_score"), prospect.solar_score))
+    return SolarProspect(
+        lead_id=prospect.lead_id,
+        address=address,
+        suburb=prospect.suburb,
+        city=prospect.city,
+        business_name=business_name,
+        building_type=building_type,
+        website=website,
+        phone=phone,
+        email=email,
+        contact_person=prospect.contact_person,
+        roof_area_sqm=float(_safe(solar.get("roof_area_sqm"), roof_area_sqm)),
+        estimated_panel_count=int(_safe(solar.get("estimated_panel_count"), prospect.estimated_panel_count)),
+        capacity_low_kw=float(_safe(solar.get("capacity_low_kw"), prospect.capacity_low_kw)),
+        capacity_high_kw=float(_safe(solar.get("capacity_high_kw"), prospect.capacity_high_kw)),
+        annual_kwh=float(_safe(solar.get("annual_kwh_mid"), prospect.annual_kwh)),
+        savings_low=float(_safe(solar.get("savings_low"), prospect.savings_low)),
+        savings_high=float(_safe(solar.get("savings_high"), prospect.savings_high)),
+        savings_potential_display=(
+            f"R {int(float(_safe(solar.get('savings_low'), prospect.savings_low)))//1000}k - "
+            f"R {int(float(_safe(solar.get('savings_high'), prospect.savings_high)))//1000}k / year"
+        ),
+        solar_score=score,
+        lead_grade=_lead_grade_from_score(score),
+        satellite_image_url=image_url,
+        latitude=prospect.latitude,
+        longitude=prospect.longitude,
+        roof_polygon=prospect.roof_polygon,
+        image_bbox=prospect.image_bbox,
+    )
+
+
 @router.post("/areas/suggest", response_model=AreaSuggestResponse)
 async def suggest_areas(request: AreaSuggestRequest) -> AreaSuggestResponse:
     areas = suggest_areas_google(
@@ -336,7 +435,6 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
 
             roof_sqm = float(max(min_roof, 120))
             solar = get_solar_stats(roof_sqm, "residential", province=request.province or "")
-            image_url = get_satellite_image_url(geo.latitude, geo.longitude)
 
             response = SearchResponse(
                 results=[
@@ -357,14 +455,14 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
                         savings_potential_display=f"R {int(solar['savings_low'])//1000}k - R {int(solar['savings_high'])//1000}k / year",
                         solar_score=solar["solar_score"],
                         lead_grade=_lead_grade_from_score(solar["solar_score"]),
-                        satellite_image_url=image_url,
+                        satellite_image_url=None,
                         latitude=geo.latitude,
                         longitude=geo.longitude,
                     )
                 ],
                 count=1,
                 search_area=geo.address,
-                message="Matched address via Google geocode.",
+                message="Matched address via fast scan. Open a lead for full enrichment.",
             )
             return response
 
@@ -401,43 +499,48 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
 
         results: List[SolarProspect] = []
         for row in ranked:
-            if row.estimated_roof_sqm < min_roof:
-                continue
-            stats = get_solar_stats(row.estimated_roof_sqm, row.business_type, province=request.province or "")
-            image_url = get_satellite_image_url(row.lat, row.lng)
-            rev = reverse_geocode(row.lat, row.lng) or {}
-            results.append(
-                SolarProspect(
-                    lead_id=row.place_id,
-                    address=row.address,
-                    suburb=rev.get("suburb"),
-                    city=rev.get("city") or request.city,
-                    business_name=row.name,
-                    building_type=row.business_type,
-                    website=row.website,
-                    phone=row.phone,
-                    email=row.email,
-                    roof_area_sqm=stats["roof_area_sqm"],
-                    estimated_panel_count=stats["estimated_panel_count"],
-                    capacity_low_kw=stats["capacity_low_kw"],
-                    capacity_high_kw=stats["capacity_high_kw"],
-                    annual_kwh=stats["annual_kwh_mid"],
-                    savings_low=stats["savings_low"],
-                    savings_high=stats["savings_high"],
-                    savings_potential_display=f"R {int(stats['savings_low'])//1000}k - R {int(stats['savings_high'])//1000}k / year",
-                    solar_score=stats["solar_score"],
-                    lead_grade=_lead_grade_from_score(stats["solar_score"]),
-                    satellite_image_url=image_url,
-                    latitude=row.lat,
-                    longitude=row.lng,
+            try:
+                if row.estimated_roof_sqm < min_roof:
+                    continue
+                stats = get_solar_stats(row.estimated_roof_sqm, row.business_type, province=request.province or "")
+                results.append(
+                    SolarProspect(
+                        lead_id=row.place_id,
+                        address=row.address,
+                        suburb=request.suburb or None,
+                        city=request.city or None,
+                        business_name=row.name,
+                        building_type=row.business_type,
+                        website=None,
+                        phone=None,
+                        email=None,
+                        roof_area_sqm=stats["roof_area_sqm"],
+                        estimated_panel_count=stats["estimated_panel_count"],
+                        capacity_low_kw=stats["capacity_low_kw"],
+                        capacity_high_kw=stats["capacity_high_kw"],
+                        annual_kwh=stats["annual_kwh_mid"],
+                        savings_low=stats["savings_low"],
+                        savings_high=stats["savings_high"],
+                        savings_potential_display=f"R {int(stats['savings_low'])//1000}k - R {int(stats['savings_high'])//1000}k / year",
+                        solar_score=stats["solar_score"],
+                        lead_grade=_lead_grade_from_score(stats["solar_score"]),
+                        satellite_image_url=None,
+                        latitude=row.lat,
+                        longitude=row.lng,
+                    )
                 )
-            )
+            except Exception as row_error:
+                logger.warning("Skipping failed lead %s during fast scan: %s", row.place_id, row_error)
+                continue
 
         return SearchResponse(
             results=results,
             count=len(results),
             search_area=center_query,
-            message=f"Found {len(results)} properties with solar potential in {center_query}",
+            message=(
+                f"Found {len(results)} leads in {center_query}. "
+                "Select a lead to run full enrichment and mail-pack generation."
+            ),
         )
     except Exception as e:
         logger.error("Search error: %s", str(e), exc_info=True)
@@ -447,7 +550,8 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
 @router.post("/search/mail-pack", response_model=MailPackResponse)
 async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
     try:
-        prospect = request.prospect
+        # Lazy-enrich on selection before expensive pack generation.
+        prospect = _enrich_prospect_lazy(request.prospect)
 
         mockup_path: Optional[str] = None
         before_after_path: Optional[str] = None
@@ -549,3 +653,13 @@ async def send_mail_pack(request: MailPackSendRequest):
     except Exception as e:
         logger.error("Mail pack send failed: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Mail pack send failed: {str(e)}")
+
+
+@router.post("/search/lead/enrich", response_model=SolarProspect)
+async def enrich_single_lead(request: LeadEnrichRequest) -> SolarProspect:
+    try:
+        return _enrich_prospect_lazy(request.prospect)
+    except Exception as e:
+        logger.error("Single-lead enrichment failed: %s", str(e), exc_info=True)
+        # Never break UX flow; return original prospect if enrichment fails.
+        return request.prospect
