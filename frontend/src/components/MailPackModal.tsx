@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MailPack, Prospect } from '../types';
 
 interface MailPackModalProps {
@@ -19,39 +19,10 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
   onSendEmail,
 }) => {
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [beforeImageError, setBeforeImageError] = useState(false);
-  const [afterImageError, setAfterImageError] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setRecipientEmail(prospect?.email || '');
-    }
-  }, [isOpen, prospect?.email]);
-
-  useEffect(() => {
-    setBeforeImageError(false);
-    setAfterImageError(false);
-  }, [pack?.before_image_url, pack?.after_image_url]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      window.addEventListener('keydown', onKeyDown);
-    }
-
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [isOpen, onClose]);
 
   const defaultEmail = useMemo(() => {
-    return recipientEmail;
-  }, [recipientEmail]);
+    return prospect?.email || recipientEmail;
+  }, [prospect?.email, recipientEmail]);
 
   if (!isOpen || !pack || !prospect) {
     return null;
@@ -79,25 +50,10 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
       <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-700 bg-slate-900/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+        <div className="border-b border-slate-700 px-6 py-4">
           <h2 className="text-lg font-bold text-slate-100">Mail Pack</h2>
-          <button
-            onClick={onClose}
-            className="ml-4 rounded-md border border-slate-600 px-3 py-1 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-          >
-            Close
-          </button>
-        </div>
-        <div className="px-4 pb-2 pt-3 sm:px-6">
           <p className="text-sm text-slate-400">{prospect.address}</p>
         </div>
 
@@ -106,59 +62,19 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
               Before Image
             </h3>
-            <div className="overflow-hidden rounded-lg border border-slate-700">
-              <div className="relative">
-                {!beforeImageError ? (
-                  <img
-                    src={pack.before_image_url}
-                    alt="Before roof"
-                    className="max-h-[44vh] w-full object-contain"
-                    onError={() => setBeforeImageError(true)}
-                  />
-                ) : (
-                  <div className="flex min-h-[220px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
-                    Before image failed to load.
-                  </div>
-                )}
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
-                </div>
-              </div>
-              <div className="border-t border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300">
-                Red marker shows the searched address at image center.
-              </div>
-            </div>
+            <img
+              src={pack.before_image_url}
+              alt="Before roof"
+              className="w-full rounded-lg border border-slate-700"
+            />
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
               After Image
             </h3>
-            <div className="overflow-hidden rounded-lg border border-slate-700">
-              <div className="relative">
-                {!afterImageError ? (
-                  <img
-                    src={pack.after_image_url}
-                    alt="After roof with panel overlay"
-                    className="max-h-[44vh] w-full object-contain"
-                    onError={() => setAfterImageError(true)}
-                  />
-                ) : (
-                  <div className="flex min-h-[220px] items-center justify-center bg-slate-800 px-4 text-center text-sm text-slate-300">
-                    After image failed to load.
-                  </div>
-                )}
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="h-4 w-4 rounded-full border-2 border-red-400 bg-red-500/80 shadow-[0_0_0_3px_rgba(15,23,42,0.75)]" />
-                </div>
-              </div>
-            </div>
-
-            <a
-              href={`https://www.google.com/maps?q=${prospect.latitude},${prospect.longitude}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-md border border-cyan-500 px-3 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
-            >
-              Open exact location in Maps
-            </a>
+            <img
+              src={pack.after_image_url}
+              alt="After roof with panel overlay"
+              className="w-full rounded-lg border border-slate-700"
+            />
           </div>
 
           <div className="space-y-4">
@@ -213,6 +129,15 @@ export const MailPackModal: React.FC<MailPackModalProps> = ({
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-slate-700 px-6 py-4 text-right">
+          <button
+            onClick={onClose}
+            className="rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-200"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

@@ -1,15 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Prospect } from '../types';
-
-export type ResultsSort = 'largest_roof' | 'most_panels';
 
 interface ResultsTableProps {
   prospects: Prospect[];
   loading: boolean;
   noResultsMessage?: string;
   generatingPackId?: string | null;
-  sortBy: ResultsSort;
-  onSortChange: (sort: ResultsSort) => void;
   onViewImage?: (prospect: Prospect) => void;
   onGenerateMailPack?: (prospect: Prospect) => void;
 }
@@ -19,16 +15,16 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   loading,
   noResultsMessage = 'No viable commercial roofs found for this search.',
   generatingPackId,
-  sortBy,
-  onSortChange,
   onViewImage,
   onGenerateMailPack,
 }) => {
+  const [sortOrder, setSortOrder] = useState<'largest' | 'smallest'>('largest');
+
   const sortedProspects = [...prospects].sort((a, b) => {
-    if (sortBy === 'most_panels') {
-      return b.estimated_panel_count - a.estimated_panel_count;
+    if (sortOrder === 'largest') {
+      return b.roof_area_sqm - a.roof_area_sqm;
     }
-    return b.roof_area_sqm - a.roof_area_sqm;
+    return a.roof_area_sqm - b.roof_area_sqm;
   });
 
   if (loading) {
@@ -58,13 +54,13 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             Sort
           </label>
           <select
-            title="Sort results"
-            value={sortBy}
-            onChange={(e) => onSortChange(e.target.value as ResultsSort)}
+            title="Roof size sort order"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as 'largest' | 'smallest')}
             className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100"
           >
-            <option value="largest_roof">Largest Roof</option>
-            <option value="most_panels">Most Panels</option>
+            <option value="largest">Largest Roof - Smallest Roof</option>
+            <option value="smallest">Smallest Roof - Largest Roof</option>
           </select>
         </div>
       </div>
@@ -74,12 +70,10 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
           <thead className="bg-slate-800 text-slate-200">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Address</th>
-              <th className="px-4 py-3 text-left font-semibold">Business</th>
               <th className="px-4 py-3 text-left font-semibold">Building Type</th>
               <th className="px-4 py-3 text-right font-semibold">Roof Size</th>
               <th className="px-4 py-3 text-right font-semibold">Panels</th>
-              <th className="px-4 py-3 text-center font-semibold">Lead Grade</th>
-              <th className="px-4 py-3 text-center font-semibold">Preview</th>
+              <th className="px-4 py-3 text-center font-semibold">View Img</th>
               <th className="px-4 py-3 text-center font-semibold">Generate Mail Pack</th>
             </tr>
           </thead>
@@ -87,7 +81,6 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             {sortedProspects.map((prospect) => (
               <tr key={prospect.osm_id} className="border-t border-slate-800 text-slate-100">
                 <td className="max-w-sm truncate px-4 py-3">{prospect.address}</td>
-                <td className="px-4 py-3 text-slate-300">{prospect.business_name || '-'}</td>
                 <td className="px-4 py-3 text-slate-300">{prospect.building_type}</td>
                 <td className="px-4 py-3 text-right text-slate-300">
                   {Math.round(prospect.roof_area_sqm).toLocaleString()} sqm
@@ -96,16 +89,11 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   {prospect.estimated_panel_count.toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className="rounded-md bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-300">
-                    {prospect.lead_grade || 'Unrated'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
                   <button
                     onClick={() => onViewImage?.(prospect)}
                     className="rounded-md border border-cyan-500 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
                   >
-                    Preview
+                    View Img
                   </button>
                 </td>
                 <td className="px-4 py-3 text-center">

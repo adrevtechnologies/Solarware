@@ -1,35 +1,25 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { MailPack, Prospect } from '../types';
 import { SearchPanel, SearchParams } from '../components/SearchPanel';
-import { ResultsSort, ResultsTable } from '../components/ResultsTable';
+import { ResultsTable } from '../components/ResultsTable';
 import { ProposalModal } from '../components/ProposalModal';
 import { MailPackModal } from '../components/MailPackModal';
 import { api } from '../services/api';
 
 export const Dashboard: React.FC = () => {
-  const fallbackApiUrl = 'https://solarware-api.onrender.com';
-  const envApiUrl = (import.meta.env.VITE_API_URL || '').trim();
-  const apiBase = (
-    envApiUrl &&
-    !/solarware\.adrevtechnologies\.com/i.test(envApiUrl) &&
-    /^https?:\/\//i.test(envApiUrl)
-      ? envApiUrl
-      : fallbackApiUrl
-  ).replace(/\/$/, '');
+  const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
-    query: '',
     country: 'South Africa',
-    province: '',
+    province: 'Western Cape',
+    city: 'Cape Town',
+    area: 'Goodwood',
+    minRoofSqm: 150,
   });
-  const [searchMode, setSearchMode] = useState<'area' | 'single-property'>('area');
-  const [sortBy, setSortBy] = useState<ResultsSort>('largest_roof');
 
   const [results, setResults] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
-  const [backendReady, setBackendReady] = useState(false);
-  // cityOptions and areaOptions removed
 
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -39,115 +29,47 @@ export const Dashboard: React.FC = () => {
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
 
-  // hasStreetQuery removed
-
-  // splitStreetInput removed
-
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  const ensureBackendReady = useCallback(async (): Promise<boolean> => {
-    if (backendReady) {
-      return true;
+  const splitStreetInput = (street?: string): { street_number?: string; street_name?: string } => {
+    const raw = (street || '').trim();
+    if (!raw) {
+      return { street_number: undefined, street_name: undefined };
     }
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      try {
-        await api.healthCheck();
-        setBackendReady(true);
-        return true;
-      } catch (error) {
-        console.warn('[Solarware] backend:wakeup:attempt_failed', { attempt, error });
-        if (attempt < 3) {
-          await sleep(1500 * attempt);
-        }
-      }
+    const firstSpace = raw.indexOf(' ');
+    if (firstSpace <= 0) {
+      return { street_number: undefined, street_name: raw };
     }
-    return false;
-  }, [backendReady]);
-
-  useEffect(() => {
-    void ensureBackendReady();
-  }, [ensureBackendReady]);
-
-  // All area/city suggestion logic removed
-
-  const parseStreetAddress = (raw: string) => {
-    const source = (raw || '').trim();
-    if (!source) {
-      return {
-        street_number: undefined as string | undefined,
-        street_name: undefined as string | undefined,
-        suburb: undefined as string | undefined,
-      };
-    }
-
-    const parts = source
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
-    const first = parts[0] || '';
-    const match = first.match(/^(\d+[A-Za-z\/-]*)\s+(.+)$/);
 
     return {
-      street_number: match ? match[1] : undefined,
-      street_name: match ? match[2] : undefined,
-      suburb: parts.length > 1 ? parts[1] : undefined,
+      street_number: raw.slice(0, firstSpace).trim(),
+      street_name: raw.slice(firstSpace + 1).trim(),
     };
   };
 
-  const handleAnalyzeProperty = async () => {
-    console.log('[Solarware] search:single:start', {
-      mode: searchMode,
-      query: searchParams.query,
-      place_id: searchParams.place_id,
-    });
+  const handleSearch = async () => {
     setLoading(true);
-    setSearchMessage('Analyzing property...');
+    setSearchMessage('');
+
     try {
-      const ready = await ensureBackendReady();
-      if (!ready) {
-        setResults([]);
-        setSearchMessage('Service temporarily unavailable. Please retry.');
-        return;
-      }
-      // Use the new query param for backend search
-      const parsed = parseStreetAddress(searchParams.formatted_address || searchParams.query);
+      const streetParts = splitStreetInput(searchParams.street);
       const payload = {
-        query: searchParams.query,
+        mode: streetParts.street_name ? 'address' : 'area',
         country: searchParams.country,
         province: searchParams.province,
         city: searchParams.city,
-        suburb: parsed.suburb || searchParams.city || searchParams.query,
-        street_number: parsed.street_number,
-        street_name: parsed.street_name,
-        place_id: searchParams.place_id,
-        lat: searchParams.lat,
-        lng: searchParams.lng,
-        suburb_lat: searchParams.lat,
-        suburb_lng: searchParams.lng,
-        formatted_address: searchParams.formatted_address,
-        business_name: searchParams.business_name,
-        radius_m: 50,
-        min_roof_sqm: searchParams.min_roof_sqm,
+        suburb: searchParams.area,
+        street_number: streetParts.street_number,
+        street_name: streetParts.street_name,
+        postcode: searchParams.postalCode,
+        radius_m: streetParts.street_name ? 300 : 1500,
+        include_residential: false,
+        min_roof_sqm: searchParams.minRoofSqm || 150,
       };
-      console.log('[Solarware] search:single:payload', payload);
-      let response;
-      try {
-        response = await api.searchProspects(payload);
-      } catch (firstError) {
-        console.warn('[Solarware] search:first_attempt_failed_retrying', firstError);
-        await sleep(1200);
-        response = await api.searchProspects(payload);
-      }
-      const propertyResults = (response.data.results || []).slice(0, 1);
-      setResults(propertyResults);
-      setSearchMessage(
-        propertyResults.length > 0
-          ? response.data.message || 'Property analyzed successfully.'
-          : 'No mapped roof found for this property search.'
-      );
+
+      const response = await api.searchProspects(payload);
+      setResults(response.data.results || []);
+      setSearchMessage(response.data.message || '');
     } catch (error) {
-      console.error('[Solarware] search:error', error);
       setResults([]);
       setSearchMessage(
         `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -155,104 +77,6 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const mapAreaScanToProspects = (items: any[]): Prospect[] => {
-    return items.map((item, index) => {
-      const roofArea = Number(item.estimated_roof_sqm || 0);
-      const panelCount = Math.max(0, Math.round(roofArea / 2));
-      const savings = Number(item.estimated_annual_savings || 0);
-      const lowCap = Number((panelCount * 0.42 * 0.9).toFixed(2));
-      const highCap = Number((panelCount * 0.42 * 1.05).toFixed(2));
-      return {
-        osm_id: item.place_id || `place-${index}`,
-        address: item.address || '',
-        suburb: undefined,
-        city: undefined,
-        business_name: item.name || undefined,
-        building_type: item.business_type || 'commercial',
-        website: item.website || undefined,
-        phone: item.phone || undefined,
-        email: item.email || undefined,
-        contact_person: undefined,
-        roof_area_sqm: roofArea,
-        estimated_panel_count: panelCount,
-        capacity_low_kw: lowCap,
-        capacity_high_kw: highCap,
-        annual_kwh: Number((highCap * 1600).toFixed(0)),
-        savings_low: Number((savings * 0.85).toFixed(0)),
-        savings_high: Number((savings * 1.1).toFixed(0)),
-        savings_potential_display: `R ${Math.round((savings * 0.85) / 1000)}k - R ${Math.round((savings * 1.1) / 1000)}k / year`,
-        solar_score: Number(item.lead_score || 0),
-        lead_grade: item.lead_grade || undefined,
-        satellite_image_url: '',
-        latitude: Number(item.lat || 0),
-        longitude: Number(item.lng || 0),
-      };
-    });
-  };
-
-  const handleAreaSearch = async () => {
-    console.log('[Solarware] search:area:start', {
-      mode: searchMode,
-      query: searchParams.query,
-      place_id: searchParams.place_id,
-    });
-    setLoading(true);
-    setSearchMessage('Generating area leads...');
-    try {
-      const ready = await ensureBackendReady();
-      if (!ready) {
-        setResults([]);
-        setSearchMessage('Service temporarily unavailable. Please retry.');
-        return;
-      }
-
-      const areaQuery = [
-        searchParams.query.trim(),
-        (searchParams.province || '').trim(),
-        (searchParams.country || 'South Africa').trim(),
-      ]
-        .filter(Boolean)
-        .join(', ');
-
-      const response = await api.areaMassSearch({
-        query: areaQuery,
-        place_id: searchParams.place_id,
-        center_lat: searchParams.lat,
-        center_lng: searchParams.lng,
-        radius_m: 1600,
-        tile_size_m: 500,
-        page: 1,
-        page_size: 100,
-      });
-      console.log('[Solarware] search:area:response_count', response.data?.count || 0);
-
-      let prospects = mapAreaScanToProspects(response.data.results || []);
-      if (searchParams.min_roof_sqm && searchParams.min_roof_sqm > 0) {
-        prospects = prospects.filter((p) => p.roof_area_sqm >= searchParams.min_roof_sqm!);
-      }
-
-      setResults(prospects);
-      setSearchMessage(`Lead generation complete: ${prospects.length} viable properties ranked.`);
-    } catch (error) {
-      console.error('[Solarware] area-scan:error', error);
-      setResults([]);
-      setSearchMessage(
-        `Area search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleModeSearch = async () => {
-    console.log('[Solarware] search:dispatch', { mode: searchMode, query: searchParams.query });
-    if (searchMode === 'area') {
-      await handleAreaSearch();
-      return;
-    }
-    await handleAnalyzeProperty();
   };
 
   const handleOpenImage = (prospect: Prospect) => {
@@ -324,27 +148,19 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1f2937_0%,_#0f172a_55%,_#020617_100%)] text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:py-10">
-        <header className="mb-8 flex min-h-[120px] w-full flex-row items-center gap-8 rounded-2xl bg-white px-8">
-          <img src="/logo.png" alt="Solarware logo" className="h-32 w-auto object-contain" />
-          <div className="flex flex-col justify-center">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-1">
-              Your AI Solar Sales Rep
-            </h1>
-            <p className="text-base sm:text-lg text-slate-700 max-w-xl">
-              Find qualified roof owners, generate proposals,{' '}
-              <span className="whitespace-nowrap">book more deals automatically.</span>
-            </p>
-          </div>
+        <header className="mb-8 rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
+          <h1 className="text-3xl font-bold tracking-tight">Solarware V1</h1>
+          <p className="mt-2 text-sm text-slate-300">
+            Real commercial roof discovery for area-targeted outreach.
+          </p>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <SearchPanel
               params={searchParams}
-              mode={searchMode}
               onParamsChange={setSearchParams}
-              onModeChange={setSearchMode}
-              onFindLeads={handleModeSearch}
+              onSearch={handleSearch}
               loading={loading}
             />
           </div>
@@ -355,9 +171,9 @@ export const Dashboard: React.FC = () => {
               {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
               {!searchMessage && (
                 <p className="mt-1 text-sm text-slate-400">
-                  {searchMode === 'area'
-                    ? 'Generate leads for a suburb-level search area.'
-                    : 'Analyze one property with detailed roof and solar output.'}
+                  {searchParams.street?.trim()
+                    ? 'Exact address mode active.'
+                    : `Area mode active for ${searchParams.area}, ${searchParams.city}.`}
                 </p>
               )}
             </div>
@@ -365,9 +181,7 @@ export const Dashboard: React.FC = () => {
             <ResultsTable
               prospects={results}
               loading={loading}
-              sortBy={sortBy}
-              onSortChange={setSortBy}
-              noResultsMessage={'No viable commercial roofs found for this search.'}
+              noResultsMessage={`No viable commercial roofs found in ${searchParams.area}.`}
               generatingPackId={generatingPackId}
               onViewImage={handleOpenImage}
               onGenerateMailPack={handleGenerateMailPack}
