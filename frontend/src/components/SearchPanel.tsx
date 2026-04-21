@@ -34,10 +34,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   onFindLeads,
   loading,
 }) => {
-  const hasGoogleKey = Boolean(
-    import.meta.env.VITE_GOOGLE_MAPS_KEY || import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
-  );
-
   const canSearch = !!params.query.trim();
   const provinceOptions = PROVINCES_BY_COUNTRY[params.country || 'South Africa'] || [];
 
@@ -98,12 +94,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           })
         }
       />
-
-      {!hasGoogleKey && (
-        <p className="text-xs text-amber-300">
-          Google browser autocomplete key is not configured. Text search fallback is active.
-        </p>
-      )}
 
       <button
         type="button"

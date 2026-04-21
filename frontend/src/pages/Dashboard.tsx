@@ -57,34 +57,14 @@ export const Dashboard: React.FC = () => {
     void ensureBackendReady();
   }, [ensureBackendReady]);
 
-  const mapAreaScanToProspects = (items: any[]): Prospect[] => {
-    return items.map((item, index) => {
-      const roofArea = Number(item.roof_area_sqm || 0);
-      const panelCount = Math.max(0, Math.round(roofArea / 2));
-      const savings = Math.max(0, Math.round(panelCount * 1200));
-      const lowCap = Number((panelCount * 0.42 * 0.9).toFixed(2));
-      const highCap = Number((panelCount * 0.42 * 1.05).toFixed(2));
-
-      return {
-        lead_id: item.lead_id || `lead-${index}`,
-        address: item.address || '',
-        business_name: item.name || undefined,
-        building_type: item.building_type || 'commercial',
-        roof_area_sqm: roofArea,
-        estimated_panel_count: panelCount,
-        capacity_low_kw: lowCap,
-        capacity_high_kw: highCap,
-        annual_kwh: Number((highCap * 1600).toFixed(0)),
-        savings_low: Number((savings * 0.85).toFixed(0)),
-        savings_high: Number((savings * 1.1).toFixed(0)),
-        savings_potential_display: `R ${Math.round((savings * 0.85) / 1000)}k - R ${Math.round((savings * 1.1) / 1000)}k / year`,
-        solar_score: Number(item.score || 0),
-        satellite_image_url: '',
-        latitude: Number(item.lat || 0),
-        longitude: Number(item.lng || 0),
-      };
-    });
-  };
+  const buildSearchPayload = (radiusM: number) => ({
+    country: searchParams.country || 'South Africa',
+    province: searchParams.province || '',
+    city: '',
+    suburb: searchParams.query.trim(),
+    radius_m: radiusM,
+    min_roof_sqm: searchParams.min_roof_sqm,
+  });
 
   const handleAnalyzeProperty = async () => {
     setLoading(true);
@@ -98,58 +78,11 @@ export const Dashboard: React.FC = () => {
         return;
       }
 
-      if (!searchParams.place_id) {
-        const fallbackResponse = await api.searchProspects({
-          country: searchParams.country || 'South Africa',
-          province: searchParams.province || '',
-          city: '',
-          suburb: searchParams.query.trim(),
-          radius_m: 500,
-          min_roof_sqm: searchParams.min_roof_sqm,
-        });
-
-        const firstResult = (fallbackResponse.data.results || []).slice(0, 1);
-        setResults(firstResult);
-        setSearchMessage(
-          firstResult.length > 0
-            ? 'Property analyzed from text search fallback.'
-            : 'No mapped roof found for this property search.'
-        );
-        return;
-      }
-
-      const response = await api.propertySearch({
-        place_id: searchParams.place_id,
-        query: searchParams.query,
-      });
-
-      const property = response.data;
-      const propertyResults: Prospect[] = [
-        {
-          lead_id: property.lead_id,
-          address: property.address,
-          business_name: property.name,
-          building_type: property.building_type || 'commercial',
-          roof_area_sqm: Number(property.roof_area_sqm || 0),
-          estimated_panel_count: Number(property.panel_count || 0),
-          capacity_low_kw: Number(((property.capacity_kw || 0) * 0.9).toFixed(2)),
-          capacity_high_kw: Number((property.capacity_kw || 0).toFixed(2)),
-          annual_kwh: Number(property.annual_kwh || 0),
-          savings_low: Number(((property.savings_year || 0) * 0.85).toFixed(0)),
-          savings_high: Number((property.savings_year || 0).toFixed(0)),
-          savings_potential_display: `R ${Math.round((property.savings_year || 0) / 1000)}k / year`,
-          solar_score: Number(property.score || 0),
-          latitude: Number(property.lat || 0),
-          longitude: Number(property.lng || 0),
-        },
-      ];
+      const response = await api.searchProspects(buildSearchPayload(500));
+      const propertyResults = (response.data.results || []).slice(0, 1);
 
       setResults(propertyResults);
-      setSearchMessage(
-        propertyResults.length > 0
-          ? 'Property analyzed successfully.'
-          : 'No mapped roof found for this property search.'
-      );
+      setSearchMessage(response.data.message || 'Property analyzed successfully.');
     } catch (error) {
       console.error('[Solarware] property-search:error', error);
       setResults([]);
@@ -173,44 +106,12 @@ export const Dashboard: React.FC = () => {
         return;
       }
 
-      if (
-        searchParams.lat === undefined ||
-        searchParams.lng === undefined ||
-        !searchParams.place_id
-      ) {
-        const fallbackResponse = await api.searchProspects({
-          country: searchParams.country || 'South Africa',
-          province: searchParams.province || '',
-          city: '',
-          suburb: searchParams.query.trim(),
-          radius_m: 1600,
-          min_roof_sqm: searchParams.min_roof_sqm,
-        });
-
-        setResults(fallbackResponse.data.results || []);
-        setSearchMessage(
-          fallbackResponse.data.message ||
-            `Lead generation complete: ${(fallbackResponse.data.results || []).length} viable properties ranked.`
-        );
-        return;
-      }
-
-      const response = await api.areaSearch({
-        place_id: searchParams.place_id,
-        query: searchParams.query,
-        lat: Number(searchParams.lat),
-        lng: Number(searchParams.lng),
-        radius_m: 1600,
-      });
-
-      let prospects = mapAreaScanToProspects(response.data.results || []);
-      const minRoof = searchParams.min_roof_sqm;
-      if (typeof minRoof === 'number' && minRoof > 0) {
-        prospects = prospects.filter((p) => p.roof_area_sqm >= minRoof);
-      }
-
-      setResults(prospects);
-      setSearchMessage(`Lead generation complete: ${prospects.length} viable properties ranked.`);
+      const response = await api.searchProspects(buildSearchPayload(1600));
+      setResults(response.data.results || []);
+      setSearchMessage(
+        response.data.message ||
+          `Lead generation complete: ${(response.data.results || []).length} viable properties ranked.`
+      );
     } catch (error) {
       console.error('[Solarware] area-scan:error', error);
       setResults([]);
