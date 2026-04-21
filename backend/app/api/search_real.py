@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["search"])
 
+# In-memory lead registry for selected-session flows.
+_LEAD_REGISTRY: dict[str, "SolarProspect"] = {}
+
 
 class SearchRequest(BaseModel):
     country: str = "South Africa"
@@ -39,6 +42,50 @@ class SearchRequest(BaseModel):
     radius_m: int = 1500
     min_roof_sqm: Optional[int] = None
     include_residential: bool = False
+
+
+class AreaSearchRequest(BaseModel):
+    place_id: str
+    query: str
+    lat: float
+    lng: float
+    radius_m: int = 1500
+
+
+class PropertySearchRequest(BaseModel):
+    place_id: str
+    query: str
+
+
+class PropertySearchResponse(BaseModel):
+    lead_id: str
+    name: str
+    address: str
+    roof_area_sqm: float
+    panel_count: int
+    capacity_kw: float
+    annual_kwh: float
+    savings_year: float
+    building_type: str
+    score: int
+    lat: float
+    lng: float
+
+
+class AreaLead(BaseModel):
+    lead_id: str
+    name: str
+    address: str
+    roof_area_sqm: float
+    building_type: str
+    score: int
+    lat: float
+    lng: float
+
+
+class AreaSearchResponse(BaseModel):
+    count: int
+    results: List[AreaLead]
 
 
 class SolarProspect(BaseModel):
@@ -78,6 +125,10 @@ class SearchResponse(BaseModel):
 
 class MailPackRequest(BaseModel):
     prospect: SolarProspect
+
+
+class LeadMailPackRequest(BaseModel):
+    lead_id: str
 
 
 class MailPackResponse(BaseModel):
@@ -276,6 +327,98 @@ def _to_public_output_url(path_value: Optional[str]) -> Optional[str]:
 
 def _safe(value, default):
     return value if value is not None else default
+
+
+def _estimate_roof_for_place(types: List[str], name: Optional[str], votes: Optional[int]) -> float:
+    t = set(types or [])
+    label = (name or "").lower()
+
+    if {"shopping_mall", "supermarket", "department_store"}.intersection(t):
+        return 2400.0
+    if {"warehouse", "industrial", "factory"}.intersection(t):
+        return 1800.0
+    if {"school", "university", "hospital"}.intersection(t):
+        return 1200.0
+    if {"store", "point_of_interest"}.intersection(t):
+        if (votes or 0) > 200:
+            return 900.0
+        if "center" in label or "centre" in label:
+            return 1100.0
+        return 650.0
+    return 500.0
+
+
+def _register_lead(prospect: SolarProspect) -> None:
+    if prospect.lead_id:
+        _LEAD_REGISTRY[prospect.lead_id] = prospect
+
+
+async def _build_mailpack_from_prospect(base_prospect: SolarProspect) -> MailPackResponse:
+    # Lazy-enrich on selection before expensive pack generation.
+    prospect = _enrich_prospect_lazy(base_prospect)
+
+    mockup_path: Optional[str] = None
+    before_after_path: Optional[str] = None
+
+    try:
+        mockup_path = await VizGenerator.generate_mockup(
+            satellite_image_path=prospect.satellite_image_url,
+            panel_count=prospect.estimated_panel_count,
+            roof_area_sqm=prospect.roof_area_sqm,
+            system_capacity_kw=prospect.capacity_high_kw,
+            roof_polygon=prospect.roof_polygon,
+            image_bbox=prospect.image_bbox,
+        )
+    except Exception as viz_error:
+        logger.warning("Mockup generation failed for %s: %s", prospect.lead_id, viz_error)
+
+    if mockup_path:
+        try:
+            before_after_path = await VizGenerator.generate_before_after(
+                before_image_path=prospect.satellite_image_url,
+                mockup_image_path=mockup_path,
+            )
+        except Exception as compare_error:
+            logger.warning("Before/after generation failed for %s: %s", prospect.lead_id, compare_error)
+
+    pack = MailingPackGenerator.generate(
+        prospect={
+            "id": prospect.lead_id,
+            "address": prospect.address,
+            "business_name": prospect.business_name,
+            "business_type": prospect.building_type,
+            "website": prospect.website,
+            "phone": prospect.phone,
+            "email": prospect.email,
+            "contact_name": prospect.contact_person,
+            "roof_area_sqm": prospect.roof_area_sqm,
+            "estimated_panel_count": prospect.estimated_panel_count,
+            "estimated_system_capacity_kw": prospect.capacity_high_kw,
+            "estimated_annual_production_kwh": prospect.annual_kwh,
+            "savings_low": prospect.savings_low,
+            "savings_high": prospect.savings_high,
+            "solar_score": prospect.solar_score,
+        },
+        contact={
+            "contact_name": prospect.contact_person,
+            "email": prospect.email,
+            "phone": prospect.phone,
+        },
+        satellite_image_path=prospect.satellite_image_url,
+        mockup_image_path=mockup_path,
+        before_after_image_path=before_after_path,
+    )
+
+    return MailPackResponse(
+        id=pack["id"],
+        before_image_url=prospect.satellite_image_url,
+        after_image_url=_to_public_output_url(mockup_path) or prospect.satellite_image_url,
+        before_after_image_url=_to_public_output_url(before_after_path) or prospect.satellite_image_url,
+        pdf_url=_to_public_output_url(pack.get("pdf_path")) or "",
+        email_subject=pack["email_subject"],
+        email_body=pack["email_body"],
+        outreach_email=pack["outreach"]["cold_email"],
+    )
 
 
 def _enrich_prospect_lazy(prospect: SolarProspect) -> SolarProspect:
@@ -548,74 +691,178 @@ async def search_real_prospects(request: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+@router.post("/area-search", response_model=AreaSearchResponse)
+async def area_search(request: AreaSearchRequest) -> AreaSearchResponse:
+    """Lightweight area lead generation. No enrichment, scraping, or mail-pack work here."""
+    try:
+        radius = max(300, min(int(request.radius_m or 1500), 4000))
+        area_req = AreaMassSearchRequest(
+            place_id=request.place_id,
+            query=(request.query or "").strip(),
+            center_lat=request.lat,
+            center_lng=request.lng,
+            radius_m=radius,
+            tile_size_m=500,
+            page=1,
+            page_size=30,
+            fast_scan=True,
+        )
+
+        service = AreaMassSearchService()
+        try:
+            ranked, _, _ = service.search_area(area_req)
+        except ValueError:
+            return AreaSearchResponse(count=0, results=[])
+
+        leads: List[AreaLead] = []
+        for row in ranked:
+            try:
+                building_type = row.business_type or "commercial"
+                roof_sqm = float(max(row.estimated_roof_sqm or 0.0, 120.0))
+                score = int(get_solar_stats(roof_sqm, building_type).get("solar_score", row.lead_score or 0))
+                leads.append(
+                    AreaLead(
+                        lead_id=row.place_id,
+                        name=row.name or "Unknown",
+                        address=row.address or "",
+                        roof_area_sqm=round(roof_sqm, 1),
+                        building_type=building_type,
+                        score=score,
+                        lat=row.lat,
+                        lng=row.lng,
+                    )
+                )
+
+                solar = get_solar_stats(roof_sqm, building_type)
+                _register_lead(
+                    SolarProspect(
+                        lead_id=row.place_id,
+                        address=row.address or "",
+                        suburb=None,
+                        city=None,
+                        business_name=row.name or "Unknown",
+                        building_type=building_type,
+                        roof_area_sqm=roof_sqm,
+                        estimated_panel_count=int(solar.get("estimated_panel_count", 0)),
+                        capacity_low_kw=float(solar.get("capacity_low_kw", 0.0)),
+                        capacity_high_kw=float(solar.get("capacity_high_kw", 0.0)),
+                        annual_kwh=float(solar.get("annual_kwh_mid", 0.0)),
+                        savings_low=float(solar.get("savings_low", 0.0)),
+                        savings_high=float(solar.get("savings_high", 0.0)),
+                        savings_potential_display=(
+                            f"R {int(float(solar.get('savings_low', 0)))//1000}k - "
+                            f"R {int(float(solar.get('savings_high', 0)))//1000}k / year"
+                        ),
+                        solar_score=score,
+                        lead_grade=_lead_grade_from_score(score),
+                        satellite_image_url=None,
+                        latitude=row.lat,
+                        longitude=row.lng,
+                    )
+                )
+            except Exception as row_error:
+                logger.warning("Skipping bad area-search row %s: %s", getattr(row, "place_id", "unknown"), row_error)
+                continue
+
+        return AreaSearchResponse(count=len(leads), results=leads)
+    except Exception as e:
+        logger.error("Area search failed: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Area search failed: {str(e)}")
+
+
+@router.post("/property-search", response_model=PropertySearchResponse)
+async def property_search(request: PropertySearchRequest) -> PropertySearchResponse:
+    try:
+        settings = get_settings()
+        places = GooglePlacesClient(settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY)
+        details = places.place_details(request.place_id)
+        if not details:
+            raise HTTPException(status_code=404, detail="Property not found")
+
+        geometry = (details.get("geometry") or {}).get("location") or {}
+        lat = geometry.get("lat")
+        lng = geometry.get("lng")
+        if lat is None or lng is None:
+            raise HTTPException(status_code=422, detail="Property coordinates unavailable")
+
+        types = details.get("types") or []
+        votes = details.get("user_ratings_total")
+        name = details.get("name") or request.query or "Selected Property"
+        address = details.get("formatted_address") or request.query
+        building_type = types[0] if types else "commercial"
+        roof_sqm = _estimate_roof_for_place(types, name, votes)
+        solar = get_solar_stats(roof_sqm, building_type)
+        score = int(solar.get("solar_score", 0))
+
+        lead_id = request.place_id
+        prospect = SolarProspect(
+            lead_id=lead_id,
+            address=address,
+            suburb=None,
+            city=None,
+            business_name=name,
+            building_type=building_type,
+            website=details.get("website"),
+            phone=details.get("formatted_phone_number") or details.get("international_phone_number"),
+            roof_area_sqm=float(solar.get("roof_area_sqm", roof_sqm)),
+            estimated_panel_count=int(solar.get("estimated_panel_count", 0)),
+            capacity_low_kw=float(solar.get("capacity_low_kw", 0.0)),
+            capacity_high_kw=float(solar.get("capacity_high_kw", 0.0)),
+            annual_kwh=float(solar.get("annual_kwh_mid", 0.0)),
+            savings_low=float(solar.get("savings_low", 0.0)),
+            savings_high=float(solar.get("savings_high", 0.0)),
+            savings_potential_display=(
+                f"R {int(float(solar.get('savings_low', 0)))//1000}k - "
+                f"R {int(float(solar.get('savings_high', 0)))//1000}k / year"
+            ),
+            solar_score=score,
+            lead_grade=_lead_grade_from_score(score),
+            satellite_image_url=None,
+            latitude=float(lat),
+            longitude=float(lng),
+        )
+        _register_lead(prospect)
+
+        return PropertySearchResponse(
+            lead_id=lead_id,
+            name=name,
+            address=address,
+            roof_area_sqm=float(solar.get("roof_area_sqm", roof_sqm)),
+            panel_count=int(solar.get("estimated_panel_count", 0)),
+            capacity_kw=float(solar.get("capacity_mid_kw", 0.0)),
+            annual_kwh=float(solar.get("annual_kwh_mid", 0.0)),
+            savings_year=float(solar.get("savings_mid", 0.0)),
+            building_type=building_type,
+            score=score,
+            lat=float(lat),
+            lng=float(lng),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Property search failed: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Property search failed: {str(e)}")
+
+
+@router.post("/mailpack", response_model=MailPackResponse)
+async def generate_mail_pack_by_lead(request: LeadMailPackRequest) -> MailPackResponse:
+    try:
+        prospect = _LEAD_REGISTRY.get(request.lead_id)
+        if not prospect:
+            raise HTTPException(status_code=404, detail="Lead not found. Re-run search and select the lead again.")
+        return await _build_mailpack_from_prospect(prospect)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Mail pack generation failed for lead_id %s: %s", request.lead_id, str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Mail pack generation failed: {str(e)}")
+
+
 @router.post("/search/mail-pack", response_model=MailPackResponse)
 async def generate_mail_pack(request: MailPackRequest) -> MailPackResponse:
     try:
-        # Lazy-enrich on selection before expensive pack generation.
-        prospect = _enrich_prospect_lazy(request.prospect)
-
-        mockup_path: Optional[str] = None
-        before_after_path: Optional[str] = None
-
-        try:
-            mockup_path = await VizGenerator.generate_mockup(
-                satellite_image_path=prospect.satellite_image_url,
-                panel_count=prospect.estimated_panel_count,
-                roof_area_sqm=prospect.roof_area_sqm,
-                system_capacity_kw=prospect.capacity_high_kw,
-                roof_polygon=prospect.roof_polygon,
-                image_bbox=prospect.image_bbox,
-            )
-        except Exception as viz_error:
-            logger.warning("Mockup generation failed for %s: %s", prospect.lead_id, viz_error)
-
-        if mockup_path:
-            try:
-                before_after_path = await VizGenerator.generate_before_after(
-                    before_image_path=prospect.satellite_image_url,
-                    mockup_image_path=mockup_path,
-                )
-            except Exception as compare_error:
-                logger.warning("Before/after generation failed for %s: %s", prospect.lead_id, compare_error)
-
-        pack = MailingPackGenerator.generate(
-            prospect={
-                "id": prospect.lead_id,
-                "address": prospect.address,
-                "business_name": prospect.business_name,
-                "business_type": prospect.building_type,
-                "website": prospect.website,
-                "phone": prospect.phone,
-                "email": prospect.email,
-                "contact_name": prospect.contact_person,
-                "roof_area_sqm": prospect.roof_area_sqm,
-                "estimated_panel_count": prospect.estimated_panel_count,
-                "estimated_system_capacity_kw": prospect.capacity_high_kw,
-                "estimated_annual_production_kwh": prospect.annual_kwh,
-                "savings_low": prospect.savings_low,
-                "savings_high": prospect.savings_high,
-                "solar_score": prospect.solar_score,
-            },
-            contact={
-                "contact_name": prospect.contact_person,
-                "email": prospect.email,
-                "phone": prospect.phone,
-            },
-            satellite_image_path=prospect.satellite_image_url,
-            mockup_image_path=mockup_path,
-            before_after_image_path=before_after_path,
-        )
-
-        return MailPackResponse(
-            id=pack["id"],
-            before_image_url=prospect.satellite_image_url,
-            after_image_url=_to_public_output_url(mockup_path) or prospect.satellite_image_url,
-            before_after_image_url=_to_public_output_url(before_after_path) or prospect.satellite_image_url,
-            pdf_url=_to_public_output_url(pack.get("pdf_path")) or "",
-            email_subject=pack["email_subject"],
-            email_body=pack["email_body"],
-            outreach_email=pack["outreach"]["cold_email"],
-        )
+        _register_lead(request.prospect)
+        return await _build_mailpack_from_prospect(request.prospect)
     except Exception as e:
         logger.error("Mail pack generation failed: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Mail pack generation failed: {str(e)}")

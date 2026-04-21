@@ -53,6 +53,50 @@ export interface SearchRequestV1 {
   include_residential?: boolean;
 }
 
+export interface AreaSearchRequest {
+  place_id: string;
+  query: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+}
+
+export interface AreaLead {
+  lead_id: string;
+  name: string;
+  address: string;
+  roof_area_sqm: number;
+  building_type: string;
+  score: number;
+  lat: number;
+  lng: number;
+}
+
+export interface AreaSearchResponse {
+  count: number;
+  results: AreaLead[];
+}
+
+export interface PropertySearchRequest {
+  place_id: string;
+  query: string;
+}
+
+export interface PropertySearchResponse {
+  lead_id: string;
+  name: string;
+  address: string;
+  roof_area_sqm: number;
+  panel_count: number;
+  capacity_kw: number;
+  annual_kwh: number;
+  savings_year: number;
+  building_type: string;
+  score: number;
+  lat: number;
+  lng: number;
+}
+
 export interface MailPack {
   id: string;
   before_image_url: string;

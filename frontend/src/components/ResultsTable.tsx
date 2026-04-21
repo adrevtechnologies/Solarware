@@ -69,40 +69,42 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
         <table className="min-w-full text-sm">
           <thead className="bg-slate-800 text-slate-200">
             <tr>
+              <th className="px-4 py-3 text-left font-semibold">Lead</th>
               <th className="px-4 py-3 text-left font-semibold">Address</th>
               <th className="px-4 py-3 text-left font-semibold">Building Type</th>
               <th className="px-4 py-3 text-right font-semibold">Roof Size</th>
-              <th className="px-4 py-3 text-right font-semibold">Panels</th>
-              <th className="px-4 py-3 text-center font-semibold">View Img</th>
+              <th className="px-4 py-3 text-right font-semibold">Score</th>
+              <th className="px-4 py-3 text-center font-semibold">View Lead</th>
               <th className="px-4 py-3 text-center font-semibold">Generate Mail Pack</th>
             </tr>
           </thead>
           <tbody>
             {sortedProspects.map((prospect) => (
-              <tr key={prospect.osm_id} className="border-t border-slate-800 text-slate-100">
+              <tr key={prospect.lead_id} className="border-t border-slate-800 text-slate-100">
+                <td className="max-w-xs truncate px-4 py-3">
+                  {prospect.business_name || 'Unnamed Lead'}
+                </td>
                 <td className="max-w-sm truncate px-4 py-3">{prospect.address}</td>
                 <td className="px-4 py-3 text-slate-300">{prospect.building_type}</td>
                 <td className="px-4 py-3 text-right text-slate-300">
                   {Math.round(prospect.roof_area_sqm).toLocaleString()} sqm
                 </td>
-                <td className="px-4 py-3 text-right text-slate-300">
-                  {prospect.estimated_panel_count.toLocaleString()}
-                </td>
+                <td className="px-4 py-3 text-right text-slate-300">{prospect.solar_score}</td>
                 <td className="px-4 py-3 text-center">
                   <button
                     onClick={() => onViewImage?.(prospect)}
                     className="rounded-md border border-cyan-500 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
                   >
-                    View Img
+                    View Lead
                   </button>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <button
                     onClick={() => onGenerateMailPack?.(prospect)}
-                    disabled={generatingPackId === prospect.osm_id}
+                    disabled={generatingPackId === prospect.lead_id}
                     className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
                   >
-                    {generatingPackId === prospect.osm_id
+                    {generatingPackId === prospect.lead_id
                       ? 'Generating Pack...'
                       : 'Generate Mail Pack'}
                   </button>

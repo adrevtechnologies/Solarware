@@ -240,11 +240,18 @@ class AreaMassSearchService:
 
     def search_area(self, request: AreaMassSearchRequest) -> Tuple[List[AreaMassSearchResult], int, str]:
         started = time.time()
-        max_duration_s = 22.0
-        max_tiles = 64
-        max_candidates = 260
-        max_enriched = max(request.page_size * 4, 120)
         fast_scan = request.fast_scan
+
+        if fast_scan:
+            max_duration_s = 5.0
+            max_tiles = 18
+            max_candidates = 120
+            max_enriched = max(request.page_size * 2, 60)
+        else:
+            max_duration_s = 22.0
+            max_tiles = 64
+            max_candidates = 260
+            max_enriched = max(request.page_size * 4, 120)
 
         bounds = self._resolve_bounds(request)
         cache_key = self._cache_key(request, bounds)
