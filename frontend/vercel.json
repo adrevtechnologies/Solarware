@@ -5,5 +5,15 @@
   "installCommand": "npm install",
   "git": {
     "deploymentEnabled": true
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://solarware-api.onrender.com/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://solarware-api.onrender.com/health"
+    }
+  ]
 }
