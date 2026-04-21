@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
-import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COUNTRIES, PROVINCES_BY_COUNTRY } from '../data/locationOptions';
+import { api } from '../services/api';
 
 export interface SearchParams {
   query: string;
@@ -25,7 +25,12 @@ interface SearchPanelProps {
   loading: boolean;
 }
 
-const GOOGLE_LIBRARIES = ['places'];
+interface Suggestion {
+  place_id: string;
+  main_text: string;
+  secondary_text: string;
+  full_text: string;
+}
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({
   params,
@@ -38,41 +43,82 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   loading,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey:
-      import.meta.env.VITE_GOOGLE_MAPS_KEY || import.meta.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '',
-    libraries: GOOGLE_LIBRARIES as ['places'],
-  });
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const canSearch = !!params.query.trim();
   const provinceOptions = PROVINCES_BY_COUNTRY[params.country || 'South Africa'] || [];
 
-  const handlePlaceChanged = () => {
-    const place = autocompleteRef.current?.getPlace();
-    if (!place || !place.geometry || !place.place_id) {
+  const fetchSuggestions = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
       return;
     }
+    try {
+      const res = await api.placesAutocomplete(query);
+      setSuggestions(res.data.suggestions || []);
+      setShowSuggestions(true);
+    } catch {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, []);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
     onParamsChange({
       ...params,
-      query: place.formatted_address || place.name || params.query,
-      place_id: place.place_id,
-      lat: place.geometry.location?.lat(),
-      lng: place.geometry.location?.lng(),
-      formatted_address: place.formatted_address || '',
-      business_name: place.name || '',
+      query: value,
+      place_id: undefined,
+      lat: undefined,
+      lng: undefined,
+      formatted_address: undefined,
+      business_name: undefined,
     });
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(value), 300);
   };
 
-  if (!isLoaded) {
-    return (
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 text-slate-300">
-        Loading Google Maps...
-      </div>
-    );
-  }
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handleSelectSuggestion = async (suggestion: Suggestion) => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+    try {
+      const details = await api.placeDetails(suggestion.place_id);
+      onParamsChange({
+        ...params,
+        query: details.data.formatted_address || suggestion.full_text,
+        place_id: details.data.place_id,
+        lat: details.data.lat,
+        lng: details.data.lng,
+        formatted_address: details.data.formatted_address || '',
+        business_name: details.data.business_name || '',
+      });
+    } catch {
+      onParamsChange({ ...params, query: suggestion.full_text });
+    }
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-6 shadow-xl backdrop-blur-sm space-y-6">
@@ -110,12 +156,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         </p>
       </div>
 
-      <Autocomplete
-        onLoad={(autocomplete) => {
-          autocompleteRef.current = autocomplete;
-        }}
-        onPlaceChanged={handlePlaceChanged}
-      >
+      <div ref={containerRef} className="relative search-autocomplete-container">
         <input
           ref={inputRef}
           type="text"
@@ -126,19 +167,27 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
           }
           className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-lg text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
           value={params.query}
-          onChange={(e) =>
-            onParamsChange({
-              ...params,
-              query: e.target.value,
-              place_id: undefined,
-              lat: undefined,
-              lng: undefined,
-              formatted_address: undefined,
-              business_name: undefined,
-            })
-          }
+          onChange={handleInputChange}
+          onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+          autoComplete="off"
         />
-      </Autocomplete>
+        {showSuggestions && suggestions.length > 0 && (
+          <ul className="absolute z-50 mt-1 w-full rounded-xl border border-slate-600 bg-slate-800 py-1 shadow-xl">
+            {suggestions.map((s) => (
+              <li
+                key={s.place_id}
+                onMouseDown={() => handleSelectSuggestion(s)}
+                className="cursor-pointer px-4 py-3 text-sm text-slate-100 hover:bg-slate-700"
+              >
+                <span className="font-medium">{s.main_text}</span>
+                {s.secondary_text && (
+                  <span className="ml-1 text-slate-400">{s.secondary_text}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <button
         type="button"
