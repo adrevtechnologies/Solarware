@@ -43,6 +43,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
   loading,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -82,10 +83,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
     debounceRef.current = setTimeout(() => fetchSuggestions(value), 300);
   };
 
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const handleSelectSuggestion = async (suggestion: Suggestion) => {
     setShowSuggestions(false);
     setSuggestions([]);
-    onParamsChange({ ...params, query: suggestion.full_text });
     try {
       const details = await api.placeDetails(suggestion.place_id);
       onParamsChange({
@@ -98,14 +105,14 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         business_name: details.data.business_name || '',
       });
     } catch {
-      // keep the typed text if details fetch fails
+      onParamsChange({ ...params, query: suggestion.full_text });
     }
   };
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (inputRef.current && !inputRef.current.closest('.search-autocomplete-container')?.contains(e.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setShowSuggestions(false);
       }
     };
@@ -149,7 +156,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         </p>
       </div>
 
-      <div className="relative search-autocomplete-container">
+      <div ref={containerRef} className="relative search-autocomplete-container">
         <input
           ref={inputRef}
           type="text"
