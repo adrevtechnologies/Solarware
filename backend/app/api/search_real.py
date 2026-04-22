@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -943,21 +944,42 @@ async def area_search(request: AreaSearchRequest) -> AreaSearchResponse:
 async def property_search(request: PropertySearchRequest) -> PropertySearchResponse:
     try:
         settings = get_settings()
-        places = GooglePlacesClient(settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY)
-        details = places.place_details(request.place_id)
-        if not details:
-            raise HTTPException(status_code=404, detail="Property not found")
+        api_key = settings.GOOGLE_SERVER_KEY or settings.GOOGLE_MAPS_API_KEY
+        if not api_key:
+            raise HTTPException(status_code=503, detail="Google Places key is not configured")
 
-        geometry = (details.get("geometry") or {}).get("location") or {}
-        lat = geometry.get("lat")
-        lng = geometry.get("lng")
+        # Use the Places API (New) v1, consistent with /api/places/autocomplete and /api/places/{id}.
+        place_resp = requests.get(
+            f"https://places.googleapis.com/v1/places/{request.place_id}",
+            headers={
+                "X-Goog-Api-Key": api_key,
+                "X-Goog-FieldMask": (
+                    "id,displayName,formattedAddress,location,"
+                    "types,userRatingCount,websiteUri,"
+                    "nationalPhoneNumber,internationalPhoneNumber"
+                ),
+            },
+            params={"languageCode": "en"},
+            timeout=10,
+        )
+        if place_resp.status_code == 404:
+            raise HTTPException(status_code=404, detail="Property not found")
+        if place_resp.status_code >= 400:
+            logger.error("Places API error %s: %s", place_resp.status_code, place_resp.text)
+            raise HTTPException(status_code=502, detail="Places API request failed")
+
+        details = place_resp.json()
+        location = details.get("location") or {}
+        lat = location.get("latitude")
+        lng = location.get("longitude")
         if lat is None or lng is None:
             raise HTTPException(status_code=422, detail="Property coordinates unavailable")
 
         types = details.get("types") or []
-        votes = details.get("user_ratings_total")
-        name = details.get("name") or request.query or "Selected Property"
-        address = details.get("formatted_address") or request.query
+        votes = details.get("userRatingCount")
+        display_name = details.get("displayName") or {}
+        name = display_name.get("text") or request.query or "Selected Property"
+        address = details.get("formattedAddress") or request.query
         building_type = types[0] if types else "commercial"
         roof_sqm = _estimate_roof_for_place(types, name, votes)
         solar = get_solar_stats(roof_sqm, building_type)
@@ -971,8 +993,8 @@ async def property_search(request: PropertySearchRequest) -> PropertySearchRespo
             city=None,
             business_name=name,
             building_type=building_type,
-            website=details.get("website"),
-            phone=details.get("formatted_phone_number") or details.get("international_phone_number"),
+            website=details.get("websiteUri"),
+            phone=details.get("nationalPhoneNumber") or details.get("internationalPhoneNumber"),
             roof_area_sqm=float(solar.get("roof_area_sqm", roof_sqm)),
             estimated_panel_count=int(solar.get("estimated_panel_count", 0)),
             capacity_low_kw=float(solar.get("capacity_low_kw", 0.0)),
