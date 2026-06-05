@@ -7,6 +7,11 @@ import {
   PropertySearchResponse,
   Prospect,
   SearchRequestV1,
+  UserAccount,
+  UserRewardEvent,
+  UserRewardEventList,
+  UserSummary,
+  UserWallet,
 } from '../types';
 
 // In production, set VITE_API_URL to the deployed backend URL.
@@ -69,6 +74,34 @@ export const api = {
     apiClient.post('/api/search/mail-pack/send', { mailing_pack, recipient_email }),
 
   healthCheck: () => apiClient.get('/health'),
+
+  signupUser: (desired_user_id?: string) =>
+    apiClient.post<UserAccount>('/api/users/signup', {
+      desired_user_id: desired_user_id || null,
+    }),
+
+  createUser: (user_id: string) => apiClient.post<UserAccount>('/api/users', { user_id }),
+
+  getUser: (user_id: string) =>
+    apiClient.get<UserSummary>(`/api/users/${encodeURIComponent(user_id)}`),
+
+  getUserWallet: (user_id: string) =>
+    apiClient.get<UserWallet>(`/api/users/${encodeURIComponent(user_id)}/wallet`),
+
+  getUserEvents: (user_id: string, limit = 20) =>
+    apiClient.get<UserRewardEventList>(`/api/users/${encodeURIComponent(user_id)}/events`, {
+      params: { limit },
+    }),
+
+  createUserEvent: (
+    user_id: string,
+    payload: {
+      event_type: string;
+      points_delta: number;
+      external_event_id?: string;
+      payload?: Record<string, unknown>;
+    }
+  ) => apiClient.post<UserRewardEvent>(`/api/users/${encodeURIComponent(user_id)}/events`, payload),
 };
 
 export default apiClient;

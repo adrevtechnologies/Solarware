@@ -139,3 +139,41 @@ export interface ProcessingResult {
   status: string;
   errors: string[];
 }
+
+export interface UserWallet {
+  user_id: string;
+  points_balance: number;
+  updated_at: string;
+}
+
+export interface UserAccount {
+  user_id: string;
+  is_active: boolean;
+  created_at: string;
+  wallet: UserWallet;
+}
+
+export interface UserSummary {
+  user_id: string;
+  is_active: boolean;
+  created_at: string;
+  last_event_at?: string | null;
+  wallet: UserWallet;
+}
+
+export interface UserRewardEvent {
+  id: string;
+  user_id: string;
+  event_type: string;
+  points_delta: number;
+  balance_after: number;
+  external_event_id?: string | null;
+  payload?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface UserRewardEventList {
+  user_id: string;
+  count: number;
+  events: UserRewardEvent[];
+}

@@ -1,8 +1,9 @@
 """Pydantic schemas for request/response validation."""
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 import uuid
+import re
 
 
 # Search Area Schemas
@@ -219,3 +220,93 @@ class ProspectExportRow(BaseModel):
     phone: Optional[str]
     data_complete: bool
     created_at: datetime
+
+
+USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-]{2,64}$")
+
+
+class UserAccountCreate(BaseModel):
+    """Schema for creating a minimal platform user account."""
+    user_id: str
+
+    @field_validator("user_id")
+    @classmethod
+    def validate_user_id(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not USER_ID_PATTERN.match(value):
+            raise ValueError("user_id must be 2-64 chars and contain only letters, numbers, underscores, or hyphens")
+        return value
+
+
+class UserSignupRequest(BaseModel):
+    """Schema for website self-signup. User ID can be requested or auto-generated."""
+    desired_user_id: Optional[str] = None
+
+    @field_validator("desired_user_id")
+    @classmethod
+    def validate_desired_user_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not v.strip():
+            return None
+        value = v.strip()
+        if not USER_ID_PATTERN.match(value):
+            raise ValueError("desired_user_id must be 2-64 chars and contain only letters, numbers, underscores, or hyphens")
+        return value
+
+
+class UserWalletResponse(BaseModel):
+    """Schema for wallet balance response."""
+    user_id: str
+    points_balance: int
+    updated_at: datetime
+
+
+class UserAccountResponse(BaseModel):
+    """Schema for user account response."""
+    user_id: str
+    is_active: bool
+    created_at: datetime
+    wallet: UserWalletResponse
+
+
+class UserSummaryResponse(BaseModel):
+    """Schema for user + wallet summary."""
+    user_id: str
+    is_active: bool
+    created_at: datetime
+    last_event_at: Optional[datetime] = None
+    wallet: UserWalletResponse
+
+
+class UserRewardEventCreate(BaseModel):
+    """Schema for appending a user reward/wallet event."""
+    event_type: str
+    points_delta: int = 0
+    external_event_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+
+    @field_validator("event_type")
+    @classmethod
+    def validate_event_type(cls, v: str) -> str:
+        value = (v or "").strip()
+        if len(value) < 2 or len(value) > 100:
+            raise ValueError("event_type must be between 2 and 100 characters")
+        return value
+
+
+class UserRewardEventResponse(BaseModel):
+    """Schema for user reward event response."""
+    id: str
+    user_id: str
+    event_type: str
+    points_delta: int
+    balance_after: int
+    external_event_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+class UserRewardEventListResponse(BaseModel):
+    """Schema for user reward event list response."""
+    user_id: str
+    count: int
+    events: List[UserRewardEventResponse]

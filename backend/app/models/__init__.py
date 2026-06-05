@@ -1,6 +1,6 @@
 """Database models for Solarware application."""
 from datetime import datetime
-from sqlalchemy import Column, String, Float, Integer, DateTime, Boolean, Text, JSON, Enum
+from sqlalchemy import Column, String, Float, Integer, DateTime, Boolean, Text, JSON, Enum, ForeignKey
 import uuid
 
 from ..core.database import Base
@@ -152,4 +152,45 @@ class SolarAnalysisLog(Base):
     error_details = Column(JSON, nullable=True)
     processing_time_ms = Column(Integer, nullable=True)
     
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class UserAccount(Base):
+    """Platform user account (minimal identity)."""
+    __tablename__ = "user_accounts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(64), nullable=False, unique=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserWallet(Base):
+    """Single wallet per user account (points-based)."""
+    __tablename__ = "user_wallets"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    account_id = Column(String(36), ForeignKey("user_accounts.id"), nullable=False, unique=True, index=True)
+    user_id = Column(String(64), nullable=False, unique=True, index=True)
+    points_balance = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserRewardEvent(Base):
+    """User wallet/reward event history."""
+    __tablename__ = "user_reward_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    account_id = Column(String(36), ForeignKey("user_accounts.id"), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False)
+    points_delta = Column(Integer, nullable=False, default=0)
+    balance_after = Column(Integer, nullable=False)
+    external_event_id = Column(String(128), nullable=True, unique=True, index=True)
+    payload = Column(JSON, nullable=True)
+
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
