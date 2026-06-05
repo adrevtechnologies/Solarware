@@ -5,6 +5,7 @@ from .search_real import router as search_real_router
 from .area_mass_search import router as area_mass_search_router
 from .places import router as places_router
 from .users import router as users_router
+from .adrev_webhooks import router as adrev_webhooks_router
 
 __all__ = [
     "health_router",
@@ -12,4 +13,5 @@ __all__ = [
     "area_mass_search_router",
     "places_router",
     "users_router",
+    "adrev_webhooks_router",
 ]

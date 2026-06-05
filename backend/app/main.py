@@ -15,6 +15,7 @@ from .api.search_real import router as search_real_router
 from .api.area_mass_search import router as area_mass_search_router
 from .api.places import router as places_router
 from .api.users import router as users_router
+from .api.adrev_webhooks import router as adrev_webhooks_router
 
 # Setup database
 try:
@@ -82,3 +83,4 @@ app.include_router(search_real_router)
 app.include_router(area_mass_search_router)
 app.include_router(places_router)
 app.include_router(users_router)
+app.include_router(adrev_webhooks_router)
