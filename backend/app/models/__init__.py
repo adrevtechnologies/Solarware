@@ -194,3 +194,39 @@ class UserRewardEvent(Base):
     payload = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class UserOnboardingProfile(Base):
+    """Onboarding/profile + AdRev integration settings per user account."""
+    __tablename__ = "user_onboarding_profiles"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(64), ForeignKey("user_accounts.user_id"), nullable=False, unique=True, index=True)
+
+    # Profile setup
+    full_name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    company_name = Column(String(255), nullable=True)
+    role_title = Column(String(255), nullable=True)
+    phone = Column(String(64), nullable=True)
+    country = Column(String(128), nullable=True)
+    website = Column(String(500), nullable=True)
+
+    # AdRev API integration setup
+    adrev_org_id = Column(String(128), nullable=True)
+    adrev_campaign_id = Column(String(128), nullable=True)
+    adrev_base_url = Column(String(500), nullable=True)
+    adrev_webhook_url = Column(String(500), nullable=True)
+    adrev_integration_mode = Column(String(64), nullable=False, default="embedded")
+    client_dashboard_route = Column(String(255), nullable=True)
+
+    # API key storage (hashed + metadata, never plaintext)
+    adrev_api_key_hash = Column(String(128), nullable=True)
+    adrev_api_key_last4 = Column(String(4), nullable=True)
+
+    # Onboarding status
+    onboarding_completed = Column(Boolean, nullable=False, default=False)
+    onboarding_completed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

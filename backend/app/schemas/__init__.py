@@ -310,3 +310,50 @@ class UserRewardEventListResponse(BaseModel):
     user_id: str
     count: int
     events: List[UserRewardEventResponse]
+
+
+class OnboardingProfileInput(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    company_name: Optional[str] = None
+    role_title: Optional[str] = None
+    phone: Optional[str] = None
+    country: Optional[str] = None
+    website: Optional[str] = None
+
+
+class OnboardingIntegrationInput(BaseModel):
+    adrev_org_id: Optional[str] = None
+    adrev_campaign_id: Optional[str] = None
+    adrev_base_url: Optional[str] = None
+    adrev_webhook_url: Optional[str] = None
+    adrev_integration_mode: Optional[str] = None
+    client_dashboard_route: Optional[str] = None
+    adrev_api_key: Optional[str] = None
+
+
+class UserOnboardingUpsertRequest(BaseModel):
+    profile: Optional[OnboardingProfileInput] = None
+    integration: Optional[OnboardingIntegrationInput] = None
+
+
+class UserOnboardingResponse(BaseModel):
+    user_id: str
+    profile: OnboardingProfileInput
+    integration: OnboardingIntegrationInput
+    api_key_configured: bool
+    api_key_last4: Optional[str] = None
+    profile_setup_completed: bool
+    integration_setup_completed: bool
+    onboarding_completed: bool
+    onboarding_completed_at: Optional[datetime] = None
+    missing_fields: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserOnboardingCompleteResponse(BaseModel):
+    user_id: str
+    onboarding_completed: bool
+    onboarding_completed_at: Optional[datetime] = None
+    missing_fields: List[str]

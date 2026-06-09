@@ -1,8 +1,12 @@
 """API routes for minimal user accounts, wallets, and reward event history."""
+import hashlib
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..core import get_db
+from ..models import UserOnboardingProfile
 from ..schemas import (
     UserAccountCreate,
     UserSignupRequest,
@@ -12,10 +16,112 @@ from ..schemas import (
     UserRewardEventCreate,
     UserRewardEventResponse,
     UserRewardEventListResponse,
+    OnboardingProfileInput,
+    OnboardingIntegrationInput,
+    UserOnboardingUpsertRequest,
+    UserOnboardingResponse,
+    UserOnboardingCompleteResponse,
 )
 from ..services.user_wallet_service import UserWalletService
 
 router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+def _normalize(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def _profile_completed(profile: UserOnboardingProfile) -> bool:
+    return bool(
+        profile.full_name
+        and profile.email
+        and profile.company_name
+    )
+
+
+def _integration_completed(profile: UserOnboardingProfile) -> bool:
+    return bool(
+        profile.adrev_org_id
+        and profile.adrev_campaign_id
+        and profile.adrev_base_url
+        and profile.adrev_webhook_url
+        and profile.adrev_api_key_hash
+    )
+
+
+def _missing_fields(profile: UserOnboardingProfile):
+    missing = []
+    if not profile.full_name:
+        missing.append("profile.full_name")
+    if not profile.email:
+        missing.append("profile.email")
+    if not profile.company_name:
+        missing.append("profile.company_name")
+    if not profile.adrev_org_id:
+        missing.append("integration.adrev_org_id")
+    if not profile.adrev_campaign_id:
+        missing.append("integration.adrev_campaign_id")
+    if not profile.adrev_base_url:
+        missing.append("integration.adrev_base_url")
+    if not profile.adrev_webhook_url:
+        missing.append("integration.adrev_webhook_url")
+    if not profile.adrev_api_key_hash:
+        missing.append("integration.adrev_api_key")
+    return missing
+
+
+def _to_onboarding_response(profile: UserOnboardingProfile) -> UserOnboardingResponse:
+    profile_done = _profile_completed(profile)
+    integration_done = _integration_completed(profile)
+    return UserOnboardingResponse(
+        user_id=profile.user_id,
+        profile=OnboardingProfileInput(
+            full_name=profile.full_name,
+            email=profile.email,
+            company_name=profile.company_name,
+            role_title=profile.role_title,
+            phone=profile.phone,
+            country=profile.country,
+            website=profile.website,
+        ),
+        integration=OnboardingIntegrationInput(
+            adrev_org_id=profile.adrev_org_id,
+            adrev_campaign_id=profile.adrev_campaign_id,
+            adrev_base_url=profile.adrev_base_url,
+            adrev_webhook_url=profile.adrev_webhook_url,
+            adrev_integration_mode=profile.adrev_integration_mode,
+            client_dashboard_route=profile.client_dashboard_route,
+            adrev_api_key=None,
+        ),
+        api_key_configured=bool(profile.adrev_api_key_hash),
+        api_key_last4=profile.adrev_api_key_last4,
+        profile_setup_completed=profile_done,
+        integration_setup_completed=integration_done,
+        onboarding_completed=bool(profile.onboarding_completed),
+        onboarding_completed_at=profile.onboarding_completed_at,
+        missing_fields=_missing_fields(profile),
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )
+
+
+def _get_or_create_onboarding_profile(db: Session, user_id: str) -> UserOnboardingProfile:
+    profile = (
+        db.query(UserOnboardingProfile)
+        .filter(UserOnboardingProfile.user_id == user_id)
+        .first()
+    )
+    if profile:
+        return profile
+
+    profile = UserOnboardingProfile(user_id=user_id)
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
 
 
 @router.post("/signup", response_model=UserAccountResponse, status_code=status.HTTP_201_CREATED)
@@ -156,4 +262,96 @@ def list_user_events(
             )
             for e in events
         ],
+    )
+
+
+@router.get("/{user_id}/onboarding", response_model=UserOnboardingResponse)
+def get_user_onboarding(user_id: str, db: Session = Depends(get_db)):
+    """Get onboarding/profile/API integration state for a user."""
+    account = UserWalletService.get_user(db, user_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = _get_or_create_onboarding_profile(db, user_id)
+    return _to_onboarding_response(profile)
+
+
+@router.put("/{user_id}/onboarding", response_model=UserOnboardingResponse)
+def upsert_user_onboarding(
+    user_id: str,
+    payload: UserOnboardingUpsertRequest,
+    db: Session = Depends(get_db),
+):
+    """Create/update onboarding profile + API integration settings."""
+    account = UserWalletService.get_user(db, user_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = _get_or_create_onboarding_profile(db, user_id)
+
+    if payload.profile is not None:
+        profile.full_name = _normalize(payload.profile.full_name)
+        profile.email = _normalize(payload.profile.email)
+        profile.company_name = _normalize(payload.profile.company_name)
+        profile.role_title = _normalize(payload.profile.role_title)
+        profile.phone = _normalize(payload.profile.phone)
+        profile.country = _normalize(payload.profile.country)
+        profile.website = _normalize(payload.profile.website)
+
+    if payload.integration is not None:
+        profile.adrev_org_id = _normalize(payload.integration.adrev_org_id)
+        profile.adrev_campaign_id = _normalize(payload.integration.adrev_campaign_id)
+        profile.adrev_base_url = _normalize(payload.integration.adrev_base_url)
+        profile.adrev_webhook_url = _normalize(payload.integration.adrev_webhook_url)
+        profile.adrev_integration_mode = _normalize(payload.integration.adrev_integration_mode) or "embedded"
+        profile.client_dashboard_route = _normalize(payload.integration.client_dashboard_route)
+
+        api_key = _normalize(payload.integration.adrev_api_key)
+        if api_key:
+            profile.adrev_api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+            profile.adrev_api_key_last4 = api_key[-4:] if len(api_key) >= 4 else api_key
+
+    profile_done = _profile_completed(profile)
+    integration_done = _integration_completed(profile)
+
+    if not (profile_done and integration_done):
+        profile.onboarding_completed = False
+        profile.onboarding_completed_at = None
+
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+
+    return _to_onboarding_response(profile)
+
+
+@router.post("/{user_id}/onboarding/complete", response_model=UserOnboardingCompleteResponse)
+def complete_user_onboarding(user_id: str, db: Session = Depends(get_db)):
+    """Mark onboarding as complete after required profile + integration fields exist."""
+    account = UserWalletService.get_user(db, user_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile = _get_or_create_onboarding_profile(db, user_id)
+    missing = _missing_fields(profile)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Onboarding is incomplete.",
+                "missing_fields": missing,
+            },
+        )
+
+    profile.onboarding_completed = True
+    profile.onboarding_completed_at = datetime.utcnow()
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+
+    return UserOnboardingCompleteResponse(
+        user_id=user_id,
+        onboarding_completed=True,
+        onboarding_completed_at=profile.onboarding_completed_at,
+        missing_fields=[],
     )
