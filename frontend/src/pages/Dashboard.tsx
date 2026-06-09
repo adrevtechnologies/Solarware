@@ -7,8 +7,11 @@ import { MailPackModal } from '../components/MailPackModal';
 import { UserAccountPanel } from '../components/UserAccountPanel';
 import { api } from '../services/api';
 
+type DashboardTab = 'prospecting' | 'adrev';
+
 export const Dashboard: React.FC = () => {
   const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('prospecting');
 
   const [searchParams, setSearchParams] = useState<SearchParams>({
     query: '',
@@ -30,6 +33,10 @@ export const Dashboard: React.FC = () => {
   const [mailPack, setMailPack] = useState<MailPack | null>(null);
   const [mailPackOpen, setMailPackOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [adrevStatus, setAdrevStatus] = useState<
+    'idle' | 'loading-script' | 'starting' | 'ready' | 'error'
+  >('idle');
+  const [adrevError, setAdrevError] = useState('');
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -272,6 +279,108 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const startAdRevLayer = useCallback(async () => {
+    const apiKey = (import.meta.env.VITE_ADREV_API_KEY || '').trim();
+    if (!apiKey) {
+      setAdrevStatus('error');
+      setAdrevError('Missing VITE_ADREV_API_KEY in frontend environment variables.');
+      return;
+    }
+
+    const baseUrl = (
+      import.meta.env.VITE_ADREV_BASE_URL || 'https://www.adrevtechnologies.com'
+    ).replace(/\/$/, '');
+
+    const scriptSrc = `${baseUrl}/sdk/adrev-runtime-layer.js`;
+    const scriptId = 'adrev-runtime-layer-sdk';
+    const mountId = 'solarware-adrev-layer-mount';
+
+    setAdrevStatus('loading-script');
+    setAdrevError('');
+
+    const ensureSdkReady = async (): Promise<boolean> => {
+      if ((window as any).AdRevLayer) {
+        return true;
+      }
+
+      const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+      if (existing) {
+        await new Promise<void>((resolve, reject) => {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener(
+            'error',
+            () => reject(new Error('AdRev SDK script failed to load.')),
+            { once: true }
+          );
+        });
+        return Boolean((window as any).AdRevLayer);
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = scriptSrc;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.addEventListener('load', () => resolve(), { once: true });
+        script.addEventListener(
+          'error',
+          () => reject(new Error('AdRev SDK script failed to load.')),
+          { once: true }
+        );
+        document.head.appendChild(script);
+      });
+
+      return Boolean((window as any).AdRevLayer);
+    };
+
+    try {
+      const sdkReady = await ensureSdkReady();
+      if (!sdkReady) {
+        throw new Error('AdRev SDK was not available after script load.');
+      }
+
+      const layer = (window as any).AdRevLayer;
+      if (!layer || typeof layer.start !== 'function') {
+        throw new Error('AdRevLayer.start is not available.');
+      }
+
+      setAdrevStatus('starting');
+
+      const storedUserId =
+        localStorage.getItem('solarware_user_id') ||
+        localStorage.getItem('solarware:user_id') ||
+        '';
+
+      const externalUserId =
+        storedUserId ||
+        `solarware_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+
+      await layer.start({
+        apiKey,
+        baseUrl,
+        orgId: (import.meta.env.VITE_ADREV_ORG_ID || '').trim() || undefined,
+        campaignId: (import.meta.env.VITE_ADREV_CAMPAIGN_ID || '').trim() || undefined,
+        externalUserId,
+        placement: 'solarware-dashboard-tab',
+        mountId,
+      });
+
+      setAdrevStatus('ready');
+    } catch (error) {
+      setAdrevStatus('error');
+      setAdrevError(error instanceof Error ? error.message : 'Failed to start AdRev layer.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'adrev' || adrevStatus !== 'idle') {
+      return;
+    }
+
+    void startAdRevLayer();
+  }, [activeTab, adrevStatus, startAdRevLayer]);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1f2937_0%,_#0f172a_55%,_#020617_100%)] text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:py-10">
@@ -290,43 +399,98 @@ export const Dashboard: React.FC = () => {
 
         <UserAccountPanel />
 
-        <div className="grid gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-4">
-            <SearchPanel
-              params={searchParams}
-              mode={searchMode}
-              showAdvanced={showAdvanced}
-              onParamsChange={setSearchParams}
-              onModeChange={setSearchMode}
-              onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
-              onFindLeads={handleModeSearch}
-              loading={loading}
-            />
-          </div>
+        <div className="mb-6 flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('prospecting')}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              activeTab === 'prospecting'
+                ? 'bg-cyan-500 text-slate-900'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            Prospecting Workspace
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('adrev')}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              activeTab === 'adrev'
+                ? 'bg-cyan-500 text-slate-900'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            AdRev Campaign Layer
+          </button>
+        </div>
 
-          <div className="lg:col-span-8">
-            <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4">
-              <h2 className="text-lg font-semibold text-slate-100">Results</h2>
-              {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
-              {!searchMessage && (
-                <p className="mt-1 text-sm text-slate-400">
-                  {searchMode === 'area'
-                    ? 'Generate leads for a suburb-level search area.'
-                    : 'Analyze one property with detailed roof and solar output.'}
-                </p>
-              )}
+        {activeTab === 'prospecting' ? (
+          <div className="grid gap-6 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <SearchPanel
+                params={searchParams}
+                mode={searchMode}
+                showAdvanced={showAdvanced}
+                onParamsChange={setSearchParams}
+                onModeChange={setSearchMode}
+                onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
+                onFindLeads={handleModeSearch}
+                loading={loading}
+              />
             </div>
 
-            <ResultsTable
-              prospects={results}
-              loading={loading}
-              noResultsMessage={'No viable commercial roofs found for this search.'}
-              generatingPackId={generatingPackId}
-              onViewImage={handleOpenImage}
-              onGenerateMailPack={handleGenerateMailPack}
+            <div className="lg:col-span-8">
+              <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4">
+                <h2 className="text-lg font-semibold text-slate-100">Results</h2>
+                {searchMessage && <p className="mt-1 text-sm text-slate-300">{searchMessage}</p>}
+                {!searchMessage && (
+                  <p className="mt-1 text-sm text-slate-400">
+                    {searchMode === 'area'
+                      ? 'Generate leads for a suburb-level search area.'
+                      : 'Analyze one property with detailed roof and solar output.'}
+                  </p>
+                )}
+              </div>
+
+              <ResultsTable
+                prospects={results}
+                loading={loading}
+                noResultsMessage={'No viable commercial roofs found for this search.'}
+                generatingPackId={generatingPackId}
+                onViewImage={handleOpenImage}
+                onGenerateMailPack={handleGenerateMailPack}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">AdRev Embedded Runtime</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  This is the in-dashboard AdRev infrastructure layer for campaign playback and event triggering.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void startAdRevLayer()}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-cyan-400"
+              >
+                Reload AdRev Layer
+              </button>
+            </div>
+
+            <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
+              Status: <strong>{adrevStatus}</strong>
+              {adrevError ? <span className="ml-2 text-red-300">• {adrevError}</span> : null}
+            </div>
+
+            <div
+              id="solarware-adrev-layer-mount"
+              className="min-h-[520px] rounded-xl border border-slate-700 bg-slate-950/60"
             />
           </div>
-        </div>
+        )}
       </div>
 
       <ProposalModal
