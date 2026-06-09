@@ -9,24 +9,6 @@ import { api } from '../services/api';
 
 type DashboardTab = 'prospecting' | 'adrev';
 
-type AdRevStartResponse = {
-  engagement?: {
-    id?: string;
-    externalUserId?: string;
-  };
-  campaign?: {
-    id?: string;
-    name?: string;
-  };
-};
-
-type AdRevSessionProof = {
-  engagementId: string;
-  externalUserId: string;
-  campaignId: string;
-  campaignName?: string;
-};
-
 export const Dashboard: React.FC = () => {
   const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
   const [activeTab, setActiveTab] = useState<DashboardTab>('prospecting');
@@ -55,7 +37,6 @@ export const Dashboard: React.FC = () => {
     'idle' | 'loading-script' | 'starting' | 'ready' | 'error'
   >('idle');
   const [adrevError, setAdrevError] = useState('');
-  const [adrevSessionProof, setAdrevSessionProof] = useState<AdRevSessionProof | null>(null);
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -316,7 +297,6 @@ export const Dashboard: React.FC = () => {
 
     setAdrevStatus('loading-script');
     setAdrevError('');
-    setAdrevSessionProof(null);
 
     const ensureSdkReady = async (): Promise<boolean> => {
       if ((window as any).AdRevLayer) {
@@ -375,7 +355,7 @@ export const Dashboard: React.FC = () => {
       const externalUserId =
         storedUserId || `solarware_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
-      const startResult: AdRevStartResponse = await layer.start({
+      await layer.start({
         apiKey,
         baseUrl,
         orgId: (import.meta.env.VITE_ADREV_ORG_ID || '').trim() || undefined,
@@ -385,26 +365,13 @@ export const Dashboard: React.FC = () => {
         mountId,
       });
 
-      const engagementId = startResult?.engagement?.id;
-      const campaignId = startResult?.campaign?.id;
-      const resolvedExternalUserId = startResult?.engagement?.externalUserId || externalUserId;
-
-      if (engagementId && campaignId && resolvedExternalUserId) {
-        setAdrevSessionProof({
-          engagementId,
-          externalUserId: resolvedExternalUserId,
-          campaignId,
-          campaignName: startResult?.campaign?.name,
-        });
-      }
-
       setAdrevStatus('ready');
     } catch (error) {
       setAdrevStatus('error');
       setAdrevError(error instanceof Error ? error.message : 'Failed to start AdRev layer.');
-      setAdrevSessionProof(null);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     if (activeTab !== 'adrev' || adrevStatus !== 'idle') {
@@ -517,30 +484,6 @@ export const Dashboard: React.FC = () => {
             <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
               Status: <strong>{adrevStatus}</strong>
               {adrevError ? <span className="ml-2 text-red-300">• {adrevError}</span> : null}
-            </div>
-
-            <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">
-              <p className="mb-2 font-semibold uppercase tracking-wide text-slate-400">
-                Live customer session proof
-              </p>
-              {adrevSessionProof ? (
-                <div className="grid gap-1">
-                  <p>
-                    Engagement: <span className="text-cyan-300">{adrevSessionProof.engagementId}</span>
-                  </p>
-                  <p>
-                    External User: <span className="text-cyan-300">{adrevSessionProof.externalUserId}</span>
-                  </p>
-                  <p>
-                    Campaign: <span className="text-cyan-300">{adrevSessionProof.campaignId}</span>
-                    {adrevSessionProof.campaignName ? ` (${adrevSessionProof.campaignName})` : ''}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-slate-400">
-                  No active live session yet. Open this tab with valid production keys to initialize a real customer session.
-                </p>
-              )}
             </div>
 
             <div
