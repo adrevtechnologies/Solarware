@@ -8,31 +8,6 @@ import { UserAccountPanel } from '../components/UserAccountPanel';
 import { api } from '../services/api';
 
 type DashboardTab = 'prospecting' | 'adrev';
-type AdRevEventType = 'impression' | 'click' | 'complete' | 'skip' | 'reward';
-
-type AdRevStartResponse = {
-  engagement?: {
-    id?: string;
-    orgId?: string;
-    externalUserId?: string;
-  };
-  campaign?: {
-    id?: string;
-    name?: string;
-  };
-  layer?: {
-    eventsEndpoint?: string;
-  };
-};
-
-type AdRevSession = {
-  engagementId: string;
-  campaignId: string;
-  orgId: string;
-  externalUserId: string;
-  campaignName?: string;
-  eventsEndpoint: string;
-};
 
 export const Dashboard: React.FC = () => {
   const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -62,9 +37,6 @@ export const Dashboard: React.FC = () => {
     'idle' | 'loading-script' | 'starting' | 'ready' | 'error'
   >('idle');
   const [adrevError, setAdrevError] = useState('');
-  const [adrevSession, setAdrevSession] = useState<AdRevSession | null>(null);
-  const [manualEventLoading, setManualEventLoading] = useState<AdRevEventType | null>(null);
-  const [manualEventMessage, setManualEventMessage] = useState('');
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -383,7 +355,7 @@ export const Dashboard: React.FC = () => {
       const externalUserId =
         storedUserId || `solarware_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
-      const startResult: AdRevStartResponse = await layer.start({
+      await layer.start({
         apiKey,
         baseUrl,
         orgId: (import.meta.env.VITE_ADREV_ORG_ID || '').trim() || undefined,
@@ -393,103 +365,12 @@ export const Dashboard: React.FC = () => {
         mountId,
       });
 
-      const engagementId = startResult?.engagement?.id;
-      const campaignId = startResult?.campaign?.id;
-      const orgId = startResult?.engagement?.orgId;
-      const resolvedExternalUserId = startResult?.engagement?.externalUserId || externalUserId;
-
-      if (engagementId && campaignId && orgId && resolvedExternalUserId) {
-        setAdrevSession({
-          engagementId,
-          campaignId,
-          orgId,
-          externalUserId: resolvedExternalUserId,
-          campaignName: startResult?.campaign?.name,
-          eventsEndpoint: startResult?.layer?.eventsEndpoint || '/api/events',
-        });
-      } else {
-        setAdrevSession(null);
-      }
-
-      setManualEventMessage('');
-
       setAdrevStatus('ready');
     } catch (error) {
       setAdrevStatus('error');
       setAdrevError(error instanceof Error ? error.message : 'Failed to start AdRev layer.');
-      setAdrevSession(null);
-    }
-  }, []);
-
-  const triggerManualAdRevEvent = useCallback(
-    async (eventType: AdRevEventType) => {
-      if (!adrevSession) {
-        setManualEventMessage('Start AdRev layer first so an engagement session exists.');
-        return;
-      }
-
-      const apiKey = (import.meta.env.VITE_ADREV_API_KEY || '').trim();
-      if (!apiKey) {
-        setManualEventMessage('Missing VITE_ADREV_API_KEY.');
-        return;
-      }
-
-      const baseUrl = (
-        import.meta.env.VITE_ADREV_BASE_URL || 'https://www.adrevtechnologies.com'
-      ).replace(/\/$/, '');
-
-      const idempotencyKey = `evt_${eventType}_${Date.now()}_${Math.random()
-        .toString(16)
-        .slice(2, 8)}`;
-
-      setManualEventLoading(eventType);
-      setManualEventMessage(`Sending ${eventType} event...`);
-
-      try {
-        const endpoint = adrevSession.eventsEndpoint.startsWith('http')
-          ? adrevSession.eventsEndpoint
-          : `${baseUrl}${adrevSession.eventsEndpoint.startsWith('/') ? '' : '/'}${adrevSession.eventsEndpoint}`;
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${apiKey}`,
-            'idempotency-key': idempotencyKey,
-          },
-          body: JSON.stringify({
-            orgId: adrevSession.orgId,
-            campaignId: adrevSession.campaignId,
-            eventType,
-            userRef: adrevSession.externalUserId,
-            occurredAt: new Date().toISOString(),
-            metadata: {
-              source: 'solarware-dashboard-manual-trigger',
-              engagementId: adrevSession.engagementId,
-              campaignName: adrevSession.campaignName,
-              action: 'manual_trigger',
-            },
-          }),
-        });
-
-        const responseText = await response.text();
-        if (!response.ok) {
-          setManualEventMessage(
-            `${eventType} failed (${response.status}). ${responseText || 'No response body.'}`
-          );
-          return;
-        }
-
-        setManualEventMessage(`${eventType} sent successfully.`);
-      } catch (error) {
-        setManualEventMessage(
-          error instanceof Error ? error.message : `Failed to send ${eventType} event.`
-        );
-      } finally {
-        setManualEventLoading(null);
-      }
     },
-    [adrevSession]
+    []
   );
 
   useEffect(() => {
@@ -603,33 +484,6 @@ export const Dashboard: React.FC = () => {
             <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
               Status: <strong>{adrevStatus}</strong>
               {adrevError ? <span className="ml-2 text-red-300">• {adrevError}</span> : null}
-            </div>
-
-            <div className="mb-3 rounded-lg border border-slate-700 bg-slate-950/50 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Manual event trigger (client dashboard)
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {(['impression', 'click', 'complete', 'skip', 'reward'] as AdRevEventType[]).map(
-                  (eventType) => (
-                    <button
-                      key={eventType}
-                      type="button"
-                      onClick={() => void triggerManualAdRevEvent(eventType)}
-                      disabled={manualEventLoading !== null || !adrevSession}
-                      className="rounded-md border border-cyan-700 bg-cyan-900/40 px-3 py-1.5 text-xs font-semibold uppercase text-cyan-200 hover:bg-cyan-800/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {manualEventLoading === eventType ? `Sending ${eventType}...` : eventType}
-                    </button>
-                  )
-                )}
-              </div>
-              <p className="mt-2 text-xs text-slate-300">
-                {manualEventMessage ||
-                  (adrevSession
-                    ? `Engagement ready: ${adrevSession.engagementId}`
-                    : 'Start AdRev layer to create engagement session first.')}
-              </p>
             </div>
 
             <div
